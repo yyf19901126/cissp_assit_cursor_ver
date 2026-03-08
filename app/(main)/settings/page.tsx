@@ -29,6 +29,7 @@ import {
   clearAIVerified,
   isAIConfigComplete,
 } from '@/lib/ai-config';
+import { extractQuestionsFromPDF } from '@/lib/pdf-client-parser';
 
 interface ImportProgress {
   status: 'idle' | 'uploading' | 'splitting' | 'parsing' | 'saving' | 'completed' | 'error';
@@ -186,7 +187,7 @@ export default function SettingsPage() {
     // 重置进度
     setImportProgress({
       status: 'uploading',
-      message: `正在上传 ${file.name}...`,
+      message: `正在解析 ${file.name}...`,
       totalQuestions: 0,
       parsedQuestions: 0,
       savedQuestions: 0,
@@ -196,52 +197,54 @@ export default function SettingsPage() {
     });
 
     try {
-      // Step 1: 上传并解析 PDF
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const uploadRes = await fetch('/api/import/upload', {
-        method: 'POST',
-        body: formData,
+      // ========== Step 1: 客户端 PDF 文本提取 ==========
+      // 使用 pdfjs-dist 在浏览器内解析 PDF，不上传到服务器，规避大小限制
+      const extractResult = await extractQuestionsFromPDF(file, (msg) => {
+        setImportProgress((prev) => ({
+          ...prev,
+          message: msg,
+        }));
       });
 
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json();
-        throw new Error(errData.error || '上传失败');
+      const { locallyParsed, unparsedQuestions, rawQuestions } = extractResult;
+
+      if (rawQuestions.length === 0) {
+        throw new Error('PDF 中未找到任何题目，请确认 PDF 包含 CISSP 考试题目');
       }
 
-      const uploadData = await uploadRes.json();
-      const { raw_questions, raw_text, total_questions } = uploadData;
+      // ========== Step 2: 合并本地解析和 AI 解析结果 ==========
+      let allParsedQuestions: any[] = [...locallyParsed];
+      const errors: string[] = [];
 
-      if (total_questions === 0 && !raw_text) {
-        throw new Error('PDF 中未找到任何题目');
-      }
+      setImportProgress((prev) => ({
+        ...prev,
+        status: 'parsing',
+        totalQuestions: rawQuestions.length,
+        parsedQuestions: locallyParsed.length,
+        message: locallyParsed.length > 0
+          ? `本地解析成功 ${locallyParsed.length} 题${unparsedQuestions.length > 0 ? `，${unparsedQuestions.length} 题需要 AI 辅助` : ''}`
+          : `准备 AI 解析 ${unparsedQuestions.length} 道题目...`,
+      }));
 
-      // Step 2: 分批 AI 解析
-      const BATCH_SIZE = 15; // 每批解析的题目数
-      let allParsedQuestions: any[] = [];
-      let errors: string[] = [];
-
-      if (raw_questions && raw_questions.length > 0) {
-        // 已识别格式，分批处理
-        const totalBatches = Math.ceil(raw_questions.length / BATCH_SIZE);
+      // 如果有无法本地解析的题目，使用 AI 辅助解析
+      if (unparsedQuestions.length > 0) {
+        const BATCH_SIZE = 15;
+        const totalBatches = Math.ceil(unparsedQuestions.length / BATCH_SIZE);
 
         setImportProgress((prev) => ({
           ...prev,
-          status: 'parsing',
-          message: `AI 正在解析题目 (${totalBatches} 批)...`,
-          totalQuestions: raw_questions.length,
           totalBatches,
+          message: `AI 正在解析剩余 ${unparsedQuestions.length} 题 (${totalBatches} 批)...`,
         }));
 
-        for (let i = 0; i < raw_questions.length; i += BATCH_SIZE) {
-          const batch = raw_questions.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < unparsedQuestions.length; i += BATCH_SIZE) {
+          const batch = unparsedQuestions.slice(i, i + BATCH_SIZE);
           const batchIndex = Math.floor(i / BATCH_SIZE);
 
           setImportProgress((prev) => ({
             ...prev,
             currentBatch: batchIndex + 1,
-            message: `AI 正在解析第 ${batchIndex + 1}/${totalBatches} 批...`,
+            message: `AI 解析第 ${batchIndex + 1}/${totalBatches} 批...`,
           }));
 
           try {
@@ -264,77 +267,24 @@ export default function SettingsPage() {
               }));
             } else {
               const errData = await parseRes.json();
-              errors.push(`批次 ${batchIndex + 1}: ${errData.error}`);
+              errors.push(`AI 批次 ${batchIndex + 1}: ${errData.error}`);
             }
           } catch (batchErr: any) {
-            errors.push(`批次 ${batchIndex + 1}: ${batchErr.message}`);
+            errors.push(`AI 批次 ${batchIndex + 1}: ${batchErr.message}`);
           }
 
           // 批次间延迟，避免 API 限流
-          if (i + BATCH_SIZE < raw_questions.length) {
-            await new Promise((r) => setTimeout(r, 1500));
-          }
-        }
-      } else if (raw_text) {
-        // 未识别格式，分段发送全文给 AI
-        const TEXT_CHUNK_SIZE = 8000;
-        const chunks: string[] = [];
-        for (let i = 0; i < raw_text.length; i += TEXT_CHUNK_SIZE) {
-          chunks.push(raw_text.substring(i, i + TEXT_CHUNK_SIZE));
-        }
-
-        const totalBatches = chunks.length;
-        setImportProgress((prev) => ({
-          ...prev,
-          status: 'parsing',
-          message: `AI 正在智能解析 PDF 内容 (${totalBatches} 段)...`,
-          totalBatches,
-        }));
-
-        for (let i = 0; i < chunks.length; i++) {
-          setImportProgress((prev) => ({
-            ...prev,
-            currentBatch: i + 1,
-            message: `AI 正在智能解析第 ${i + 1}/${totalBatches} 段...`,
-          }));
-
-          try {
-            const parseRes = await fetch('/api/import/parse', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ai_config: aiConfig,
-                raw_text: chunks[i],
-                batch_index: i,
-              }),
-            });
-
-            if (parseRes.ok) {
-              const parseData = await parseRes.json();
-              allParsedQuestions.push(...(parseData.questions || []));
-              setImportProgress((prev) => ({
-                ...prev,
-                parsedQuestions: allParsedQuestions.length,
-              }));
-            } else {
-              const errData = await parseRes.json();
-              errors.push(`段落 ${i + 1}: ${errData.error}`);
-            }
-          } catch (chunkErr: any) {
-            errors.push(`段落 ${i + 1}: ${chunkErr.message}`);
-          }
-
-          if (i + 1 < chunks.length) {
+          if (i + BATCH_SIZE < unparsedQuestions.length) {
             await new Promise((r) => setTimeout(r, 1500));
           }
         }
       }
 
       if (allParsedQuestions.length === 0) {
-        throw new Error('AI 未能解析出任何题目，请检查 PDF 内容格式');
+        throw new Error('未能解析出任何题目，请检查 PDF 内容格式');
       }
 
-      // Step 3: 保存到数据库
+      // ========== Step 3: 保存到数据库 ==========
       setImportProgress((prev) => ({
         ...prev,
         status: 'saving',
@@ -342,11 +292,18 @@ export default function SettingsPage() {
         errors,
       }));
 
-      // 分批保存
       const SAVE_BATCH = 50;
       let totalSaved = 0;
+      const totalSaveBatches = Math.ceil(allParsedQuestions.length / SAVE_BATCH);
+
       for (let i = 0; i < allParsedQuestions.length; i += SAVE_BATCH) {
         const batch = allParsedQuestions.slice(i, i + SAVE_BATCH);
+        const saveBatchIdx = Math.floor(i / SAVE_BATCH) + 1;
+
+        setImportProgress((prev) => ({
+          ...prev,
+          message: `正在保存到数据库 (${saveBatchIdx}/${totalSaveBatches})...`,
+        }));
 
         try {
           const saveRes = await fetch('/api/import/save', {
@@ -371,11 +328,11 @@ export default function SettingsPage() {
         }
       }
 
-      // 完成
+      // ========== 完成 ==========
       setImportProgress({
         status: 'completed',
-        message: `导入完成！成功保存 ${totalSaved} 道题目`,
-        totalQuestions: raw_questions?.length || allParsedQuestions.length,
+        message: `导入完成！成功保存 ${totalSaved} 道题目（本地解析 ${locallyParsed.length} 题${unparsedQuestions.length > 0 ? `，AI 解析 ${allParsedQuestions.length - locallyParsed.length} 题` : ''}）`,
+        totalQuestions: rawQuestions.length,
         parsedQuestions: allParsedQuestions.length,
         savedQuestions: totalSaved,
         currentBatch: 0,
