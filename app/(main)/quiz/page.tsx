@@ -980,15 +980,29 @@ function QuizContent() {
             </button>
 
             {currentIndex === questions.length - 1 ? (
-              <button
-                onClick={() => {
-                  flushPendingAnswer(); // 提交最后一题的答案
-                  setIsCompleted(true);
-                }}
-                className="flex items-center gap-2 px-6 py-2 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
-              >
-                完成 <Trophy size={18} />
-              </button>
+              // 顺序模式：如果还有更多题目，显示加载提示；否则显示完成按钮
+              mode === 'sequential' && sequentialBatchInfo?.hasMore ? (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm">
+                  {isLoadingNextBatch ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      正在加载下一批题目...
+                    </>
+                  ) : (
+                    '已到当前批次末尾，正在加载下一批...'
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    flushPendingAnswer(); // 提交最后一题的答案
+                    setIsCompleted(true);
+                  }}
+                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
+                >
+                  完成 <Trophy size={18} />
+                </button>
+              )
             ) : (
               <button
                 onClick={() => goToQuestion(currentIndex + 1)}
