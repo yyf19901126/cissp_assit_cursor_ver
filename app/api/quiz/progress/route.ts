@@ -8,6 +8,22 @@ export const dynamic = 'force-dynamic';
 // 获取用户各域的掌握进度
 export async function GET(request: NextRequest) {
   try {
+    // ═══════════════════ 禁用 Vercel Runtime Cache ═══════════════════
+    // 这是 Vercel 官方推荐的方法，用于禁用函数级别的运行时缓存
+    // 注意：@vercel/functions 只在 Vercel 运行时环境中可用
+    try {
+      // @ts-ignore - @vercel/functions 只在 Vercel 运行时可用，本地开发环境可能不存在
+      const { getCache } = await import('@vercel/functions');
+      const cache = getCache();
+      if (cache && typeof cache.clear === 'function') {
+        cache.clear();
+        console.log('[Progress API] Runtime cache cleared');
+      }
+    } catch (e) {
+      // @vercel/functions 在本地开发环境可能不可用，这是正常的
+      // 在 Vercel 生产环境中应该可用
+    }
+
     const authUser = await getUserFromRequest(request);
     if (!authUser) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
