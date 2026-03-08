@@ -15,6 +15,7 @@ import {
   Loader2,
   Database,
   ListOrdered,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,12 +49,11 @@ export default function DashboardPage() {
     setIsLoading(true);
     try {
       const res = await fetch('/api/quiz/progress', { credentials: 'include' });
-      console.log('[Dashboard] API status:', res.status, 'user:', user?.id);
+      console.log('[Dashboard] API status:', res.status);
       if (res.ok) {
         const data = await res.json();
         console.log('[Dashboard] API response overall:', JSON.stringify(data.overall));
         console.log('[Dashboard] _debug from server:', JSON.stringify(data._debug));
-        console.log('[Dashboard] AuthContext user.id:', user?.id);
         if (data.domains) {
           setDomainProgress(data.domains);
         }
@@ -78,14 +78,24 @@ export default function DashboardPage() {
     }
   }, [router]);
 
-  // 当认证完成且有用户时获取数据
+  // 当认证完成时获取数据（不依赖 user 对象，因为 API 从 cookie 读取）
   useEffect(() => {
-    if (!authLoading && user) {
+    if (!authLoading) {
       fetchProgress();
-    } else if (!authLoading && !user) {
-      setIsLoading(false);
     }
-  }, [authLoading, user, fetchProgress]);
+  }, [authLoading, fetchProgress]);
+
+  // 页面可见时自动刷新（用户从其他页面返回时）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !authLoading) {
+        console.log('[Dashboard] Page visible, refreshing...');
+        fetchProgress();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [authLoading, fetchProgress]);
 
   const weakestDomains = [...domainProgress]
     .filter((d) => d.answered_questions > 0)
@@ -106,13 +116,24 @@ export default function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       {/* 欢迎头部 */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          学习总览
-        </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          跟踪你的 CISSP 复习进度，找到薄弱环节，针对性突破
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            学习总览
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            跟踪你的 CISSP 复习进度，找到薄弱环节，针对性突破
+          </p>
+        </div>
+        <button
+          onClick={fetchProgress}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="刷新数据"
+        >
+          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+          <span className="text-sm font-medium">刷新</span>
+        </button>
       </div>
 
       {/* 错误提示 */}

@@ -13,6 +13,7 @@ import {
   BookOpen,
   Loader2,
   Inbox,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -62,15 +63,24 @@ export default function WrongQuestionsPage() {
     }
   }, [router]);
 
-  // 当认证完成且有用户时获取数据
+  // 当认证完成时获取数据（不依赖 user 对象，因为 API 从 cookie 读取）
   useEffect(() => {
-    if (!authLoading && user) {
+    if (!authLoading) {
       fetchWrongQuestions();
-    } else if (!authLoading && !user) {
-      // 认证完成但无用户 → 跳转登录
-      setIsLoading(false);
     }
-  }, [authLoading, user, fetchWrongQuestions]);
+  }, [authLoading, fetchWrongQuestions]);
+
+  // 页面可见时自动刷新（用户从其他页面返回时）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !authLoading) {
+        console.log('[WrongQuestions] Page visible, refreshing...');
+        fetchWrongQuestions();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [authLoading, fetchWrongQuestions]);
 
   const filteredQuestions = wrongQuestions.filter((wq) => {
     if (selectedDomain && wq.question.domain !== selectedDomain) return false;
@@ -98,14 +108,25 @@ export default function WrongQuestionsPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* 标题 */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-          <AlertTriangle className="text-amber-500" />
-          错题本
-        </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          记录你做错的题目，针对性复习薄弱知识点
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            <AlertTriangle className="text-amber-500" />
+            错题本
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            记录你做错的题目，针对性复习薄弱知识点
+          </p>
+        </div>
+        <button
+          onClick={fetchWrongQuestions}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="刷新数据"
+        >
+          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+          <span className="text-sm font-medium">刷新</span>
+        </button>
       </div>
 
       {/* 错误提示 */}
