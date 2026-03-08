@@ -196,17 +196,27 @@ export default function WrongQuestionsPage() {
           </label>
           {wrongQuestions.length > 0 && (
             <button
-              onClick={() =>
-                router.push(
-                  `/quiz?mode=practice${
-                    selectedDomain ? `&domain=${selectedDomain}` : ''
-                  }`
-                )
-              }
+              onClick={() => {
+                // 收集所有未掌握的错题 ID
+                const wrongQuestionIds = wrongQuestions
+                  .filter((wq) => !wq.is_mastered)
+                  .map((wq) => wq.question.id);
+                
+                if (wrongQuestionIds.length === 0) {
+                  alert('所有错题都已掌握！');
+                  return;
+                }
+
+                // 将错题 ID 列表存储到 sessionStorage
+                sessionStorage.setItem('wrong_question_ids', JSON.stringify(wrongQuestionIds));
+                
+                // 跳转到 quiz 页面
+                router.push('/quiz?mode=practice&wrong_questions=true');
+              }}
               className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
             >
               <RotateCcw size={16} />
-              重做错题
+              重做错题 ({wrongQuestions.filter((wq) => !wq.is_mastered).length})
             </button>
           )}
         </div>

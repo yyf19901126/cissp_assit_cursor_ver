@@ -40,6 +40,7 @@ function QuizContent() {
 
   const modeParam = searchParams.get('mode') || 'practice';
   const domainParam = searchParams.get('domain');
+  const wrongQuestionsParam = searchParams.get('wrong_questions') === 'true';
 
   // ═══════════════════ 状态 ═══════════════════
   const [mode, setMode] = useState<QuizMode>(modeParam as QuizMode);
@@ -137,6 +138,25 @@ function QuizContent() {
       const startFrom = resumeFrom ?? sequentialStartFrom;
 
       try {
+        // ═══════════════════ 重做错题模式 ═══════════════════
+        let wrongQuestionIds: string[] | undefined = undefined;
+        if (wrongQuestionsParam) {
+          const stored = sessionStorage.getItem('wrong_question_ids');
+          if (stored) {
+            try {
+              wrongQuestionIds = JSON.parse(stored);
+              sessionStorage.removeItem('wrong_question_ids'); // 使用后清除
+            } catch (e) {
+              console.error('Failed to parse wrong_question_ids from sessionStorage:', e);
+            }
+          }
+          if (!wrongQuestionIds || wrongQuestionIds.length === 0) {
+            setLoadError('没有找到错题列表，请从错题本页面重新开始');
+            setIsLoadingQuestions(false);
+            return;
+          }
+        }
+
         const questionCount =
           mode === 'exam' ? 125 : mode === 'sequential' ? sequentialBatchSize : customQuestionCount;
 
@@ -145,11 +165,12 @@ function QuizContent() {
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-              mode,
+              mode: wrongQuestionsParam ? 'practice' : mode, // 错题模式强制使用练习模式
               // 顺序模式不需要域筛选，刷整个题库
-              domains: mode === 'sequential' ? undefined : (selectedDomains.length > 0 ? selectedDomains : undefined),
-              question_count: questionCount,
-              start_from: mode === 'sequential' ? startFrom : undefined,
+              domains: wrongQuestionsParam ? undefined : (mode === 'sequential' ? undefined : (selectedDomains.length > 0 ? selectedDomains : undefined)),
+              question_count: wrongQuestionsParam ? undefined : questionCount, // 错题模式使用所有错题
+              start_from: wrongQuestionsParam ? undefined : (mode === 'sequential' ? startFrom : undefined),
+              wrong_question_ids: wrongQuestionIds, // 错题ID列表
             }),
           });
 

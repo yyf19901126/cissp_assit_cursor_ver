@@ -22,10 +22,53 @@ export async function POST(request: NextRequest) {
       domains,      // 多域数组
       start_from,   // 顺序模式: 起始 question_number
       time_limit,
+      wrong_question_ids, // 错题ID列表（用于重做错题）
     } = body;
 
     const supabase = createServiceClient();
 
+    // ═══════════════════ 重做错题模式 ═══════════════════
+    // 如果提供了错题ID列表，直接使用这些题目
+    if (wrong_question_ids && Array.isArray(wrong_question_ids) && wrong_question_ids.length > 0) {
+      // 验证这些题目是否存在
+      const { data: wrongQuestions, error: wrongQError } = await supabase
+        .from('questions')
+        .select('id, question_number')
+        .in('id', wrong_question_ids);
+
+      if (wrongQError) {
+        console.error('Error fetching wrong questions:', wrongQError);
+        return NextResponse.json({ error: `查询错题失败: ${wrongQError.message}` }, { status: 500 });
+      }
+
+      if (!wrongQuestions || wrongQuestions.length === 0) {
+        return NextResponse.json({ error: '没有找到指定的错题' }, { status: 404 });
+      }
+
+      const questionIds = wrongQuestions.map((q: any) => q.id);
+
+      const virtualSession = {
+        id: crypto.randomUUID(),
+        mode: 'practice', // 重做错题强制使用练习模式
+        total_questions: questionIds.length,
+        current_index: 0,
+        question_ids: questionIds,
+        answers: {},
+        time_limit: null,
+        start_time: new Date().toISOString(),
+        is_virtual: true,
+        is_wrong_questions_mode: true, // 标记这是错题重做模式
+      };
+
+      return NextResponse.json({
+        session: virtualSession,
+        total_available: questionIds.length,
+        grand_total: questionIds.length,
+        has_more: false,
+      });
+    }
+
+    // ═══════════════════ 正常模式：从题库筛选 ═══════════════════
     // 构建查询
     let query = supabase.from('questions').select('id, question_number').range(0, 9999);
 

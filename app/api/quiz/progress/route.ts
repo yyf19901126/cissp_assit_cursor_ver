@@ -141,21 +141,31 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 总体统计
-    const totalAnswered = progressData.length;
-    const totalCorrect = progressData.filter((p: any) => p.is_correct).length;
+    // ═══════════════════ 总体统计（去重）═══════════════════
+    // 按 question_id 去重，统计实际做过的题目数
+    const uniqueQuestionIds = new Set(progressData.map((p: any) => p.question_id));
+    const totalAnswered = uniqueQuestionIds.size;
+    
+    // 统计去重后的正确题数：每个题目只要答对过至少一次就算正确
+    const correctQuestionIds = new Set(
+      progressData
+        .filter((p: any) => p.is_correct)
+        .map((p: any) => p.question_id)
+    );
+    const totalCorrect = correctQuestionIds.size;
 
     const response = NextResponse.json({
       domains: progress,
       overall: {
         total_questions: totalQuestionsCount,
-        total_answered: totalAnswered,
+        total_answered: Math.min(totalAnswered, totalQuestionsCount), // 确保不超过题库总数
         total_correct: totalCorrect,
         accuracy: totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
       },
       _debug: {
         user_id: userId,
-        progress_count: progressData.length,
+        raw_progress_count: progressData.length, // 原始记录数（未去重）
+        unique_questions: totalAnswered, // 去重后的题目数
         method: 'separate_queries',
       },
     });
