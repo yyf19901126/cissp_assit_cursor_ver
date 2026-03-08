@@ -222,6 +222,7 @@ export async function GET(request: NextRequest) {
       wrong_questions: totalAnswered - totalCorrect,
     });
 
+    const now = new Date().toISOString();
     const response = NextResponse.json({
       domains: progress,
       overall: {
@@ -229,6 +230,7 @@ export async function GET(request: NextRequest) {
         total_answered: Math.min(totalAnswered, totalQuestionsCount), // 确保不超过题库总数
         total_correct: totalCorrect,
         accuracy: totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
+        _timestamp: now, // 添加时间戳确保每次响应都不同，防止缓存
       },
       _debug: {
         user_id: userId,
@@ -236,16 +238,21 @@ export async function GET(request: NextRequest) {
         unique_questions: totalAnswered, // 去重后的题目数
         method: 'separate_queries',
         version: '2.0.0', // API 版本标识，用于确认 Vercel 是否运行最新代码
-        timestamp: new Date().toISOString(),
+        timestamp: now,
         db_url_preview: dbUrlPreview, // 数据库 URL 预览（用于确认 Vercel 和本地是否连接同一数据库）
       },
     });
 
-    // ═══════════════════ 禁用所有缓存 ═══════════════════
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    // ═══════════════════ 禁用所有缓存（包括 Vercel Edge Functions 缓存）═══════════════════
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
     response.headers.set('X-Content-Type-Options', 'nosniff');
+    // Vercel 特定的缓存控制
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+    // 添加随机数确保每次响应都不同（防止 Edge Functions 缓存）
+    response.headers.set('X-Response-Id', `${Date.now()}-${Math.random().toString(36).substring(7)}`);
 
     return response;
   } catch (error: any) {
