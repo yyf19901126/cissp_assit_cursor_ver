@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
     // 1. 先查 user_progress（不 join，显式设置 limit 避免默认限制）
     // 注意：Supabase 默认 limit 是 1000，但 range(0, 9999) 应该能获取更多
     // 为了确保获取所有记录，我们先查 count，然后分批获取
-    const { count: totalCount, error: countError } = await supabase
+    const { count: totalCount, error: progressCountError } = await supabase
       .from('user_progress')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId);
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     console.log('[Progress API] Total count query:', {
       userId,
       totalCount,
-      countError: countError?.message,
+      progressCountError: progressCountError?.message,
     });
 
     // 分批获取所有记录（每批最多 1000 条，Supabase 的默认限制）
