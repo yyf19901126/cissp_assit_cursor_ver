@@ -12,22 +12,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServiceClient();
 
-    // 获取每个域的题目总数
-    const { data: domainCounts } = await supabase
-      .from('questions')
-      .select('domain');
-
-    // 获取用户答题数据
-    let progressData: any[] = [];
-    if (userId) {
-      const { data } = await supabase
-        .from('user_progress')
-        .select('question_id, is_correct, questions!inner(domain)')
-        .eq('user_id', userId);
-      progressData = data || [];
-    }
-
-    // 统计 8 大域进度
+    // 统计 8 大域
     const domains = [
       { id: 1, name: 'Security and Risk Management', nameZh: '安全与风险管理' },
       { id: 2, name: 'Asset Security', nameZh: '资产安全' },
@@ -39,10 +24,54 @@ export async function GET(request: NextRequest) {
       { id: 8, name: 'Software Development Security', nameZh: '软件开发安全' },
     ];
 
+    // 使用 count 查询每个域的题目数量（不受 1000 行限制）
+    let totalQuestionsCount = 0;
+    const domainCountMap: Record<number, number> = {};
+
+    // 先查总数
+    const { count: overallCount, error: countError } = await supabase
+      .from('questions')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      console.error('Error counting questions:', countError);
+      return NextResponse.json({ error: countError.message }, { status: 500 });
+    }
+
+    totalQuestionsCount = overallCount || 0;
+
+    // 查询每个域的题目数量
+    for (const d of domains) {
+      const { count, error } = await supabase
+        .from('questions')
+        .select('*', { count: 'exact', head: true })
+        .eq('domain', d.id);
+
+      if (error) {
+        console.error(`Error counting domain ${d.id}:`, error);
+        domainCountMap[d.id] = 0;
+      } else {
+        domainCountMap[d.id] = count || 0;
+      }
+    }
+
+    // 获取用户答题数据（如果有 userId）
+    let progressData: any[] = [];
+    if (userId) {
+      const { data, error } = await supabase
+        .from('user_progress')
+        .select('question_id, is_correct, questions!inner(domain)')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error fetching user progress:', error);
+      } else {
+        progressData = data || [];
+      }
+    }
+
     const progress = domains.map((d) => {
-      const totalInDomain = (domainCounts || []).filter(
-        (q: any) => q.domain === d.id
-      ).length;
+      const totalInDomain = domainCountMap[d.id] || 0;
 
       const answeredInDomain = progressData.filter(
         (p: any) => (p.questions as any)?.domain === d.id
@@ -71,13 +100,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       domains: progress,
       overall: {
-        total_questions: (domainCounts || []).length,
+        total_questions: totalQuestionsCount,
         total_answered: totalAnswered,
         total_correct: totalCorrect,
         accuracy: totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
       },
     });
   } catch (error: any) {
+    console.error('Progress API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

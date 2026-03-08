@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
       masteredIds = (masteredData || []).map((d: any) => d.question_id);
     }
 
-    // 2. 构建查询
-    let query = supabase.from('questions').select('*');
+    // 2. 构建查询（突破 1000 行限制）
+    let query = supabase.from('questions').select('*').range(0, 9999);
 
     // 按域筛选
     if (domain) {
