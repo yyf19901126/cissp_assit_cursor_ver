@@ -12,6 +12,7 @@ interface QuestionCardProps {
   mode: 'practice' | 'exam';
   onSubmit: (answer: string) => void;
   onRequestExplanation: () => void;
+  onAnswerSelect?: (answer: string) => void; // 选项变化时通知父组件（用于导航时自动提交）
   result?: {
     is_correct: boolean;
     correct_answer: string;
@@ -19,6 +20,7 @@ interface QuestionCardProps {
     keywords: string[];
   } | null;
   showResult: boolean;
+  savedAnswer?: string; // 已保存的答案（回退到此题时恢复选中状态）
 }
 
 // 高亮题眼关键词
@@ -56,15 +58,27 @@ export default function QuestionCard({
   mode,
   onSubmit,
   onRequestExplanation,
+  onAnswerSelect,
   result,
   showResult,
+  savedAnswer,
 }: QuestionCardProps) {
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(savedAnswer || null);
+  const [isSubmitted, setIsSubmitted] = useState(!!savedAnswer);
 
   const handleSelect = (label: string) => {
+    // 练习模式提交后锁定选项
     if (isSubmitted && mode === 'practice') return;
     setSelectedAnswer(label);
+
+    // 通知父组件当前选中的答案（用于导航时自动提交）
+    onAnswerSelect?.(label);
+
+    // 考试模式：选中即提交，每道题实时记录
+    if (mode === 'exam') {
+      setIsSubmitted(true);
+      onSubmit(label);
+    }
   };
 
   const handleSubmit = () => {
@@ -172,7 +186,17 @@ export default function QuestionCard({
 
         {/* 操作按钮 */}
         <div className="mt-6 flex items-center gap-3">
-          {!isSubmitted ? (
+          {mode === 'exam' ? (
+            /* 考试模式：选中即提交，显示已选状态 */
+            isSubmitted && selectedAnswer ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+                <CheckCircle size={18} />
+                已选择 {selectedAnswer}（可点击其他选项更改）
+              </div>
+            ) : (
+              <div className="text-sm text-gray-400">请选择一个选项</div>
+            )
+          ) : !isSubmitted ? (
             <button
               onClick={handleSubmit}
               disabled={!selectedAnswer}

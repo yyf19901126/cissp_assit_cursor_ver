@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import QuestionCard from '@/components/QuestionCard';
 import NavigationMatrix from '@/components/NavigationMatrix';
@@ -74,12 +74,16 @@ function QuizContent() {
   const [sequentialStartFrom, setSequentialStartFrom] = useState(0);
   const [sequentialBatchSize, setSequentialBatchSize] = useState(25);
 
+  // 追踪用户选中但未提交的答案（用于导航时自动提交）
+  const pendingAnswerRef = useRef<{ questionId: string; answer: string } | null>(null);
+
   // ═══════════════════ 计时器 ═══════════════════
   useEffect(() => {
     if (mode !== 'exam' || !isStarted || isCompleted || timeRemaining === null) return;
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev === null || prev <= 0) {
+          flushPendingAnswer(); // 时间到，提交最后作答
           setIsCompleted(true);
           clearInterval(timer);
           return 0;
@@ -209,9 +213,19 @@ function QuizContent() {
   );
 
   // ═══════════════════ 提交答案 ═══════════════════
-  const handleSubmitAnswer = async (answer: string) => {
-    const question = questions[currentIndex];
+  const handleSubmitAnswer = async (answer: string, questionOverride?: Question) => {
+    const question = questionOverride || questions[currentIndex];
     if (!question) return;
+
+    // 清除 pending 状态（已提交）
+    if (pendingAnswerRef.current?.questionId === question.id) {
+      pendingAnswerRef.current = null;
+    }
+
+    // 如果已经提交过相同答案，跳过重复提交
+    if (answers[question.id] === answer && results[question.id]) {
+      return;
+    }
 
     setAnswers((prev) => ({ ...prev, [question.id]: answer }));
 
@@ -256,6 +270,27 @@ function QuizContent() {
         keywords: question.keywords,
       },
     }));
+  };
+
+  // 用户选中选项时的回调（追踪待提交的答案）
+  const handleAnswerSelect = (answer: string) => {
+    const question = questions[currentIndex];
+    if (!question) return;
+    pendingAnswerRef.current = { questionId: question.id, answer };
+  };
+
+  // 自动提交当前题目的待提交答案
+  const flushPendingAnswer = () => {
+    const pending = pendingAnswerRef.current;
+    if (!pending) return;
+    // 只提交尚未提交的答案
+    if (!results[pending.questionId]) {
+      const question = questions.find(q => q.id === pending.questionId);
+      if (question) {
+        handleSubmitAnswer(pending.answer, question);
+      }
+    }
+    pendingAnswerRef.current = null;
   };
 
   // ═══════════════════ AI 解析 ═══════════════════
@@ -322,6 +357,8 @@ function QuizContent() {
 
   const goToQuestion = (index: number) => {
     if (index >= 0 && index < questions.length) {
+      // 导航前自动提交当前题目的未提交答案
+      flushPendingAnswer();
       setCurrentIndex(index);
       setAiExplanation(null);
     }
@@ -730,6 +767,7 @@ function QuizContent() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => {
+              flushPendingAnswer(); // 返回前提交当前未提交的答案
               setIsStarted(false);
               setIsCompleted(false);
               setQuestions([]);
@@ -778,9 +816,11 @@ function QuizContent() {
               totalQuestions={questions.length}
               mode={mode === 'sequential' ? 'practice' : mode}
               onSubmit={handleSubmitAnswer}
+              onAnswerSelect={handleAnswerSelect}
               onRequestExplanation={handleRequestExplanation}
               result={results[currentQuestion.id] || null}
               showResult={mode !== 'exam' && !!results[currentQuestion.id]}
+              savedAnswer={answers[currentQuestion.id] || undefined}
             />
           )}
 
@@ -806,7 +846,10 @@ function QuizContent() {
 
             {currentIndex === questions.length - 1 ? (
               <button
-                onClick={() => setIsCompleted(true)}
+                onClick={() => {
+                  flushPendingAnswer(); // 提交最后一题的答案
+                  setIsCompleted(true);
+                }}
                 className="flex items-center gap-2 px-6 py-2 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
               >
                 完成 <Trophy size={18} />
