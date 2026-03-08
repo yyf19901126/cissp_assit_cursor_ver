@@ -8,21 +8,13 @@ export const dynamic = 'force-dynamic';
 // 获取用户各域的掌握进度
 export async function GET(request: NextRequest) {
   try {
-    // ═══════════════════ 禁用 Vercel Runtime Cache ═══════════════════
-    // 这是 Vercel 官方推荐的方法，用于禁用函数级别的运行时缓存
-    // 注意：@vercel/functions 只在 Vercel 运行时环境中可用
-    try {
-      // @ts-ignore - @vercel/functions 只在 Vercel 运行时可用，本地开发环境可能不存在
-      const { getCache } = await import('@vercel/functions');
-      const cache = getCache();
-      if (cache && typeof cache.clear === 'function') {
-        cache.clear();
-        console.log('[Progress API] Runtime cache cleared');
-      }
-    } catch (e) {
-      // @vercel/functions 在本地开发环境可能不可用，这是正常的
-      // 在 Vercel 生产环境中应该可用
-    }
+    // ═══════════════════ 缓存控制说明 ═══════════════════
+    // 我们已经有了多层缓存控制：
+    // 1. dynamic = 'force-dynamic' - 禁用 Next.js 缓存
+    // 2. 完整的 Cache-Control 响应头 - 禁用浏览器和 CDN 缓存
+    // 3. URL 时间戳参数 - 绕过边缘缓存
+    // 4. vercel.json 全局配置 - Vercel 配置层禁用缓存
+    // 如果仍有 Runtime Cache 问题，需要在 Vercel Dashboard 中手动清除
 
     const authUser = await getUserFromRequest(request);
     if (!authUser) {
