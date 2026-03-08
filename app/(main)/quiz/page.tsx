@@ -5,19 +5,34 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import QuestionCard from '@/components/QuestionCard';
 import NavigationMatrix from '@/components/NavigationMatrix';
 import AIExplanationPanel from '@/components/AIExplanation';
+import TermLookup from '@/components/TermLookup';
 import { Question, AIExplanation } from '@/types/database';
 import { CISSP_DOMAINS } from '@/types/database';
 import { getAIConfig } from '@/lib/ai-config';
 import {
+  getAnonymousUserId,
+  getSequentialProgress,
+  saveSequentialProgress,
+  clearSequentialProgress,
+} from '@/lib/anonymous-user';
+import {
   Timer,
-  RotateCcw,
   ChevronLeft,
   ChevronRight,
   Trophy,
   Loader2,
   Database,
+  BookOpen,
+  ListOrdered,
+  Shuffle,
+  Target,
+  Play,
+  RotateCcw,
+  ArrowRight,
 } from 'lucide-react';
 import clsx from 'clsx';
+
+type QuizMode = 'practice' | 'exam' | 'sequential';
 
 function QuizContent() {
   const searchParams = useSearchParams();
@@ -26,9 +41,8 @@ function QuizContent() {
   const modeParam = searchParams.get('mode') || 'practice';
   const domainParam = searchParams.get('domain');
 
-  const [mode, setMode] = useState<'practice' | 'exam'>(
-    modeParam as 'practice' | 'exam'
-  );
+  // ═══════════════════ 状态 ═══════════════════
+  const [mode, setMode] = useState<QuizMode>(modeParam as QuizMode);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -42,15 +56,24 @@ function QuizContent() {
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [selectedDomain, setSelectedDomain] = useState<number | null>(
-    domainParam ? parseInt(domainParam) : null
+
+  // 多域选择
+  const [selectedDomains, setSelectedDomains] = useState<number[]>(
+    domainParam ? [parseInt(domainParam)] : []
   );
 
-  // 考试模式计时器
-  useEffect(() => {
-    if (mode !== 'exam' || !isStarted || isCompleted || timeRemaining === null)
-      return;
+  // 自定义题目数量
+  const [customQuestionCount, setCustomQuestionCount] = useState(25);
 
+  // 顺序模式
+  const [sequentialProgress, setSequentialProgressState] = useState(getSequentialProgress());
+  const [hasMoreQuestions, setHasMoreQuestions] = useState(false);
+  const [sequentialGrandTotal, setSequentialGrandTotal] = useState(0);
+  const [sequentialStartFrom, setSequentialStartFrom] = useState(0);
+
+  // ═══════════════════ 计时器 ═══════════════════
+  useEffect(() => {
+    if (mode !== 'exam' || !isStarted || isCompleted || timeRemaining === null) return;
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev === null || prev <= 0) {
@@ -61,102 +84,135 @@ function QuizContent() {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, [mode, isStarted, isCompleted, timeRemaining]);
 
-  const startQuiz = useCallback(async () => {
-    setIsLoadingQuestions(true);
-    setLoadError(null);
-    setCurrentIndex(0);
-    setAnswers({});
-    setResults({});
-    setIsCompleted(false);
-    setAiExplanation(null);
+  // ═══════════════════ 域选择 ═══════════════════
+  const toggleDomain = (domainId: number) => {
+    setSelectedDomains((prev) =>
+      prev.includes(domainId) ? prev.filter((d) => d !== domainId) : [...prev, domainId]
+    );
+  };
 
-    if (mode === 'exam') {
-      setTimeRemaining(180 * 60); // 180分钟
+  const toggleAllDomains = () => {
+    if (selectedDomains.length === 8) {
+      setSelectedDomains([]);
+    } else {
+      setSelectedDomains([1, 2, 3, 4, 5, 6, 7, 8]);
     }
+  };
 
-    // 从 API 获取题目
-    try {
-      const res = await fetch(`/api/quiz/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode,
-          domain: selectedDomain,
-          question_count: mode === 'exam' ? 125 : 25,
-        }),
-      });
+  // 最小题目数量
+  const minQuestionCount = Math.max(1, selectedDomains.length);
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        setLoadError(errData.error || '无法创建答题会话');
-        setIsLoadingQuestions(false);
-        return;
+  // 确保自定义数量不低于最小值
+  useEffect(() => {
+    if (customQuestionCount < minQuestionCount) {
+      setCustomQuestionCount(minQuestionCount);
+    }
+  }, [selectedDomains, minQuestionCount, customQuestionCount]);
+
+  // ═══════════════════ 开始答题 ═══════════════════
+  const startQuiz = useCallback(
+    async (resumeFrom?: number) => {
+      setIsLoadingQuestions(true);
+      setLoadError(null);
+      setCurrentIndex(0);
+      setAnswers({});
+      setResults({});
+      setIsCompleted(false);
+      setAiExplanation(null);
+
+      if (mode === 'exam') {
+        setTimeRemaining(180 * 60);
       }
 
-      const data = await res.json();
-      const session = data.session;
+      const startFrom = resumeFrom ?? sequentialStartFrom;
 
-      if (!session || !session.question_ids || session.question_ids.length === 0) {
-        setLoadError('题库为空，请先导入题目');
-        setIsLoadingQuestions(false);
-        return;
-      }
+      try {
+        const questionCount =
+          mode === 'exam' ? 125 : mode === 'sequential' ? 25 : customQuestionCount;
 
-      // 获取所有题目详情
-      const questionPromises = session.question_ids.map(async (qId: string) => {
-        const qRes = await fetch(`/api/quiz/next?session_id=${session.id}`);
-        return qRes.ok ? (await qRes.json()).question : null;
-      });
+        const res = await fetch('/api/quiz/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode,
+            domains: selectedDomains.length > 0 ? selectedDomains : undefined,
+            question_count: questionCount,
+            start_from: mode === 'sequential' ? startFrom : undefined,
+          }),
+        });
 
-      // 直接批量获取题目（通过 session 的 question_ids）
-      const allQuestionsRes = await fetch(`/api/quiz/questions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question_ids: session.question_ids }),
-      });
+        const data = await res.json();
 
-      let loadedQuestions: Question[] = [];
-
-      if (allQuestionsRes.ok) {
-        const qData = await allQuestionsRes.json();
-        loadedQuestions = qData.questions || [];
-      } else {
-        // 逐个获取题目作为备用方案
-        for (const qId of session.question_ids) {
-          try {
-            const qRes = await fetch(`/api/quiz/next?question_id=${qId}`);
-            if (qRes.ok) {
-              const qData = await qRes.json();
-              if (qData.question) loadedQuestions.push(qData.question);
-            }
-          } catch {}
+        // 顺序模式无更多题目
+        if (data.error === 'no_more_questions') {
+          clearSequentialProgress();
+          setSequentialProgressState(null);
+          setLoadError('🎉 恭喜！所有题目已完成，进度已重置。');
+          setIsLoadingQuestions(false);
+          return;
         }
-      }
 
-      if (loadedQuestions.length === 0) {
-        setLoadError('无法加载题目数据');
+        if (!res.ok) {
+          setLoadError(data.error || '无法创建答题会话');
+          setIsLoadingQuestions(false);
+          return;
+        }
+
+        const session = data.session;
+        if (!session?.question_ids?.length) {
+          setLoadError('题库为空，请先导入题目');
+          setIsLoadingQuestions(false);
+          return;
+        }
+
+        // 保存顺序模式元数据
+        if (mode === 'sequential') {
+          setHasMoreQuestions(data.has_more);
+          setSequentialGrandTotal(data.grand_total);
+        }
+
+        // 批量获取题目详情
+        const qRes = await fetch('/api/quiz/questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question_ids: session.question_ids }),
+        });
+
+        let loadedQuestions: Question[] = [];
+        if (qRes.ok) {
+          const qData = await qRes.json();
+          loadedQuestions = qData.questions || [];
+        }
+
+        if (loadedQuestions.length === 0) {
+          setLoadError('无法加载题目数据');
+          setIsLoadingQuestions(false);
+          return;
+        }
+
+        setQuestions(loadedQuestions);
+        setIsStarted(true);
+      } catch (err: any) {
+        setLoadError(`网络错误: ${err.message || '请检查网络连接'}`);
+      } finally {
         setIsLoadingQuestions(false);
-        return;
       }
+    },
+    [mode, selectedDomains, customQuestionCount, sequentialStartFrom]
+  );
 
-      setQuestions(loadedQuestions);
-      setIsStarted(true);
-    } catch (err: any) {
-      setLoadError(`网络错误: ${err.message || '请检查网络连接'}`);
-    } finally {
-      setIsLoadingQuestions(false);
-    }
-  }, [mode, selectedDomain]);
-
+  // ═══════════════════ 提交答案 ═══════════════════
   const handleSubmitAnswer = async (answer: string) => {
     const question = questions[currentIndex];
     if (!question) return;
 
     setAnswers((prev) => ({ ...prev, [question.id]: answer }));
+
+    // 获取匿名用户 ID
+    const userId = getAnonymousUserId();
 
     try {
       const res = await fetch('/api/quiz/submit', {
@@ -165,13 +221,26 @@ function QuizContent() {
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answer,
-          mode,
+          user_id: userId,
+          mode: mode === 'sequential' ? 'practice' : mode,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
         setResults((prev) => ({ ...prev, [question.id]: data }));
+
+        // 顺序模式：保存进度
+        if (mode === 'sequential') {
+          const progress = getSequentialProgress();
+          saveSequentialProgress({
+            lastQuestionNumber: question.question_number,
+            totalQuestions: sequentialGrandTotal,
+            answeredCount: (progress?.answeredCount || 0) + 1,
+            timestamp: new Date().toISOString(),
+          });
+          setSequentialProgressState(getSequentialProgress());
+        }
         return;
       }
     } catch {}
@@ -189,6 +258,7 @@ function QuizContent() {
     }));
   };
 
+  // ═══════════════════ AI 解析 ═══════════════════
   const handleRequestExplanation = async () => {
     const question = questions[currentIndex];
     if (!question) return;
@@ -214,7 +284,7 @@ function QuizContent() {
       } else {
         const errData = await res.json().catch(() => ({}));
         setAiExplanation({
-          deep_analysis: `AI 解析请求失败: ${errData.error || '请检查 OpenAI API Key 配置'}`,
+          deep_analysis: `AI 解析请求失败: ${errData.error || '请检查 AI 配置'}`,
           domain_mapping: {
             domain_id: question.domain,
             domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
@@ -229,7 +299,7 @@ function QuizContent() {
       }
     } catch (err: any) {
       setAiExplanation({
-        deep_analysis: `AI 服务连接失败: ${err.message || '请检查网络和 API 配置'}`,
+        deep_analysis: `AI 连接失败: ${err.message || '请检查网络'}`,
         domain_mapping: {
           domain_id: question.domain,
           domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
@@ -257,19 +327,30 @@ function QuizContent() {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m
-      .toString()
-      .padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // 未开始 - 显示选择界面
+  // ═══════════════════ 顺序模式：继续下一批 ═══════════════════
+  const handleSequentialNext = () => {
+    const lastQuestion = questions[questions.length - 1];
+    if (lastQuestion) {
+      setSequentialStartFrom(lastQuestion.question_number);
+      setIsStarted(false);
+      setIsCompleted(false);
+      setQuestions([]);
+      // 立即开始下一批
+      setTimeout(() => {
+        startQuiz(lastQuestion.question_number);
+      }, 100);
+    }
+  };
+
+  // ═══════════════════ 未开始：选择界面 ═══════════════════
   if (!isStarted) {
     return (
-      <div className="max-w-3xl mx-auto space-y-8">
+      <div className="max-w-3xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            开始答题
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">开始答题</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             选择模式和知识域，开始你的 CISSP 之旅
           </p>
@@ -281,98 +362,226 @@ function QuizContent() {
             <Database size={20} className="flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">{loadError}</p>
-              <p className="text-xs mt-1 opacity-75">
-                请确认：1) 题库已导入 Supabase &nbsp; 2) 环境变量配置正确
-              </p>
             </div>
           </div>
         )}
 
         {/* 模式选择 */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-          <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">
-            选择模式
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">选择模式</h3>
+          <div className="grid grid-cols-3 gap-3">
             <button
               onClick={() => setMode('practice')}
               className={clsx(
-                'p-6 rounded-xl border-2 text-left transition-all',
+                'p-5 rounded-xl border-2 text-left transition-all',
                 mode === 'practice'
                   ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
               )}
             >
-              <h4 className="font-bold text-gray-800 dark:text-gray-200">
-                📝 练习模式
-              </h4>
-              <p className="text-sm text-gray-500 mt-1">
-                每题即时反馈，可查看 AI 解析
-              </p>
-              <p className="text-xs text-gray-400 mt-2">25 题 / 不限时</p>
+              <div className="flex items-center gap-2 mb-2">
+                <Shuffle size={18} className="text-blue-500" />
+                <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm">随机练习</h4>
+              </div>
+              <p className="text-xs text-gray-500">自定义题数，即时反馈</p>
             </button>
+
             <button
               onClick={() => setMode('exam')}
               className={clsx(
-                'p-6 rounded-xl border-2 text-left transition-all',
+                'p-5 rounded-xl border-2 text-left transition-all',
                 mode === 'exam'
                   ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
               )}
             >
-              <h4 className="font-bold text-gray-800 dark:text-gray-200">
-                🎯 模拟考试
-              </h4>
-              <p className="text-sm text-gray-500 mt-1">
-                限时答题，结束后统一查看结果
-              </p>
-              <p className="text-xs text-gray-400 mt-2">125 题 / 180 分钟</p>
+              <div className="flex items-center gap-2 mb-2">
+                <Target size={18} className="text-purple-500" />
+                <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm">模拟考试</h4>
+              </div>
+              <p className="text-xs text-gray-500">125 题 / 180 分钟</p>
+            </button>
+
+            <button
+              onClick={() => setMode('sequential')}
+              className={clsx(
+                'p-5 rounded-xl border-2 text-left transition-all',
+                mode === 'sequential'
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-green-300'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <ListOrdered size={18} className="text-green-500" />
+                <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm">顺序刷题</h4>
+              </div>
+              <p className="text-xs text-gray-500">按序刷完，可随时暂停</p>
             </button>
           </div>
         </div>
 
-        {/* 域选择 */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-          <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">
-            选择知识域（可选）
-          </h3>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setSelectedDomain(null)}
-              className={clsx(
-                'p-3 rounded-xl border text-sm text-left transition-all',
-                !selectedDomain
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-300'
-              )}
-            >
-              全部域
-            </button>
-            {CISSP_DOMAINS.map((d) => (
+        {/* 域选择（考试模式不显示） */}
+        {mode !== 'exam' && (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">
+              选择知识域（可多选，不选 = 全部）
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              {/* 全选 */}
               <button
-                key={d.id}
-                onClick={() => setSelectedDomain(d.id)}
+                onClick={toggleAllDomains}
                 className={clsx(
-                  'p-3 rounded-xl border text-sm text-left transition-all',
-                  selectedDomain === d.id
+                  'col-span-2 p-3 rounded-xl border text-sm text-center transition-all font-medium',
+                  selectedDomains.length === 0 || selectedDomains.length === 8
                     ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-300'
                 )}
               >
-                <span className="font-bold">D{d.id}</span> {d.nameZh}
+                {selectedDomains.length === 8 ? '✓ 全部域（取消全选）' : '全部域'}
               </button>
-            ))}
+
+              {CISSP_DOMAINS.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => toggleDomain(d.id)}
+                  className={clsx(
+                    'p-3 rounded-xl border text-sm text-left transition-all flex items-center gap-2',
+                    selectedDomains.includes(d.id)
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-300'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-5 h-5 rounded flex items-center justify-center text-xs border flex-shrink-0',
+                      selectedDomains.includes(d.id)
+                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : 'border-gray-300 dark:border-gray-600'
+                    )}
+                  >
+                    {selectedDomains.includes(d.id) ? '✓' : ''}
+                  </span>
+                  <span>
+                    <span className="font-bold">D{d.id}</span> {d.nameZh}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* 自定义题目数量（仅练习模式） */}
+        {mode === 'practice' && (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">自定义题目数量</h3>
+            <div className="flex items-center gap-4">
+              <input
+                type="number"
+                min={minQuestionCount}
+                max={500}
+                value={customQuestionCount}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value) || minQuestionCount;
+                  setCustomQuestionCount(Math.max(minQuestionCount, Math.min(500, val)));
+                }}
+                className="w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-center font-bold text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              />
+              <span className="text-sm text-gray-500">题</span>
+              <div className="flex gap-2 ml-2">
+                {[10, 25, 50, 100].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setCustomQuestionCount(Math.max(minQuestionCount, n))}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      customQuestionCount === n
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {selectedDomains.length > 0 && (
+              <p className="mt-2 text-xs text-gray-400">
+                已选 {selectedDomains.length} 个域，最少 {minQuestionCount} 题
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* 顺序模式进度 */}
+        {mode === 'sequential' && sequentialProgress && (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-green-200 dark:border-green-800 p-6">
+            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
+              <BookOpen size={18} className="text-green-500" />
+              上次进度
+            </h3>
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex-1">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  已完成至第 <span className="font-bold text-green-600">{sequentialProgress.lastQuestionNumber}</span> 题
+                  {sequentialProgress.totalQuestions > 0 && (
+                    <> / 共 {sequentialProgress.totalQuestions} 题</>
+                  )}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  已答 {sequentialProgress.answeredCount} 题 · 
+                  最近更新 {new Date(sequentialProgress.timestamp).toLocaleString('zh-CN')}
+                </p>
+                {sequentialProgress.totalQuestions > 0 && (
+                  <div className="mt-2 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-green-500 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, (sequentialProgress.lastQuestionNumber / sequentialProgress.totalQuestions) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setSequentialStartFrom(sequentialProgress.lastQuestionNumber);
+                  startQuiz(sequentialProgress.lastQuestionNumber);
+                }}
+                disabled={isLoadingQuestions}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors shadow-lg shadow-green-500/20"
+              >
+                <Play size={16} />
+                继续上次进度
+              </button>
+              <button
+                onClick={() => {
+                  clearSequentialProgress();
+                  setSequentialProgressState(null);
+                  setSequentialStartFrom(0);
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              >
+                <RotateCcw size={16} />
+                重新开始
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 开始按钮 */}
         <button
-          onClick={startQuiz}
+          onClick={() => startQuiz(mode === 'sequential' ? sequentialStartFrom : undefined)}
           disabled={isLoadingQuestions}
           className={clsx(
             'w-full py-4 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2',
             isLoadingQuestions
               ? 'bg-gray-400 cursor-not-allowed shadow-none'
+              : mode === 'sequential'
+              ? 'bg-gradient-to-r from-green-600 to-teal-600 text-white hover:from-green-700 hover:to-teal-700 shadow-green-500/25'
+              : mode === 'exam'
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-purple-500/25'
               : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
           )}
         >
@@ -381,6 +590,8 @@ function QuizContent() {
               <Loader2 size={22} className="animate-spin" />
               加载题目中...
             </>
+          ) : mode === 'sequential' && sequentialProgress ? (
+            '从头开始 →'
           ) : (
             '开始答题 →'
           )}
@@ -389,7 +600,7 @@ function QuizContent() {
     );
   }
 
-  // 已完成
+  // ═══════════════════ 已完成 ═══════════════════
   if (isCompleted) {
     const totalAnswered = Object.keys(results).length;
     const correctCount = Object.values(results).filter((r) => r.is_correct).length;
@@ -400,20 +611,49 @@ function QuizContent() {
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-8 text-center">
           <Trophy
             size={64}
-            className={clsx(
-              'mx-auto mb-4',
-              accuracy >= 70 ? 'text-yellow-500' : 'text-gray-400'
-            )}
+            className={clsx('mx-auto mb-4', accuracy >= 70 ? 'text-yellow-500' : 'text-gray-400')}
           />
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            {mode === 'exam' ? '考试完成！' : '练习完成！'}
+            {mode === 'exam'
+              ? '考试完成！'
+              : mode === 'sequential'
+              ? '本批完成！'
+              : '练习完成！'}
           </h2>
           <p className="text-5xl font-bold text-indigo-600 mb-2">{accuracy}%</p>
           <p className="text-gray-500">
             {correctCount} / {totalAnswered} 题正确
           </p>
 
-          <div className="mt-6 flex gap-3 justify-center">
+          {/* 顺序模式进度 */}
+          {mode === 'sequential' && sequentialProgress && (
+            <div className="mt-4 p-3 rounded-xl bg-green-50 dark:bg-green-900/10 text-sm text-green-700 dark:text-green-300">
+              总进度：已完成至第 {sequentialProgress.lastQuestionNumber} 题
+              {sequentialGrandTotal > 0 && (
+                <> / 共 {sequentialGrandTotal} 题 ({Math.round((sequentialProgress.lastQuestionNumber / sequentialGrandTotal) * 100)}%)</>
+              )}
+            </div>
+          )}
+
+          <div className="mt-6 flex gap-3 justify-center flex-wrap">
+            {/* 顺序模式：继续下一批 */}
+            {mode === 'sequential' && hasMoreQuestions && (
+              <button
+                onClick={handleSequentialNext}
+                className="px-6 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                <ArrowRight size={18} />
+                继续下一批 25 题
+              </button>
+            )}
+
+            {/* 顺序模式全部完成 */}
+            {mode === 'sequential' && !hasMoreQuestions && (
+              <div className="w-full mb-2 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-300 text-sm font-medium">
+                🎉 恭喜！所有题目已刷完！
+              </div>
+            )}
+
             <button
               onClick={() => {
                 setIsStarted(false);
@@ -422,7 +662,7 @@ function QuizContent() {
               }}
               className="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
             >
-              再来一次
+              {mode === 'sequential' ? '返回设置' : '再来一次'}
             </button>
             <button
               onClick={() => router.push('/wrong-questions')}
@@ -436,6 +676,7 @@ function QuizContent() {
     );
   }
 
+  // ═══════════════════ 答题中 ═══════════════════
   const currentQuestion = questions[currentIndex];
 
   return (
@@ -454,8 +695,17 @@ function QuizContent() {
             ← 返回
           </button>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            {mode === 'exam' ? '模拟考试' : '练习模式'}
+            {mode === 'exam'
+              ? '模拟考试'
+              : mode === 'sequential'
+              ? '顺序刷题'
+              : '练习模式'}
           </h1>
+          {mode === 'sequential' && currentQuestion && (
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              第 {currentQuestion.question_number} 题
+            </span>
+          )}
         </div>
 
         {timeRemaining !== null && (
@@ -482,20 +732,17 @@ function QuizContent() {
               question={currentQuestion}
               questionIndex={currentIndex}
               totalQuestions={questions.length}
-              mode={mode}
+              mode={mode === 'sequential' ? 'practice' : mode}
               onSubmit={handleSubmitAnswer}
               onRequestExplanation={handleRequestExplanation}
               result={results[currentQuestion.id] || null}
-              showResult={mode === 'practice' && !!results[currentQuestion.id]}
+              showResult={mode !== 'exam' && !!results[currentQuestion.id]}
             />
           )}
 
           {/* AI 解析面板 */}
           {(isAiLoading || aiExplanation) && (
-            <AIExplanationPanel
-              explanation={aiExplanation}
-              isLoading={isAiLoading}
-            />
+            <AIExplanationPanel explanation={aiExplanation} isLoading={isAiLoading} />
           )}
 
           {/* 上一题 / 下一题 */}
@@ -539,7 +786,7 @@ function QuizContent() {
             answers={answers}
             questionIds={questions.map((q) => q.id)}
             results={
-              mode === 'practice'
+              mode !== 'exam'
                 ? Object.fromEntries(
                     Object.entries(results).map(([id, r]) => [id, r.is_correct])
                   )
@@ -547,6 +794,9 @@ function QuizContent() {
             }
             onNavigate={goToQuestion}
           />
+
+          {/* 名词速查 */}
+          <TermLookup />
         </div>
       </div>
     </div>

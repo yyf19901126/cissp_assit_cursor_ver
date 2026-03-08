@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { CISSP_DOMAINS, Question } from '@/types/database';
+import { getAnonymousUserId } from '@/lib/anonymous-user';
 import {
   AlertTriangle,
   RotateCcw,
@@ -38,12 +39,17 @@ export default function WrongQuestionsPage() {
 
   async function fetchWrongQuestions() {
     try {
-      // TODO: 当用户认证实现后，通过 API 获取真实错题数据
-      // const res = await fetch('/api/quiz/wrong-questions');
-      // if (res.ok) {
-      //   const data = await res.json();
-      //   setWrongQuestions(data.questions || []);
-      // }
+      const userId = getAnonymousUserId();
+      if (!userId) {
+        setIsLoading(false);
+        return;
+      }
+
+      const res = await fetch(`/api/quiz/wrong-questions?user_id=${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setWrongQuestions(data.questions || []);
+      }
     } catch {
       // 网络错误
     } finally {
@@ -105,7 +111,7 @@ export default function WrongQuestionsPage() {
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
             )}
           >
-            全部 ({wrongQuestions.length})
+            全部 ({wrongQuestions.filter((wq) => !wq.is_mastered || showMastered).length})
           </button>
           {domainStats.map((d) => (
             <button

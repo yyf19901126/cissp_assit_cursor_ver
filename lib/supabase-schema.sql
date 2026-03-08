@@ -93,3 +93,18 @@ CREATE POLICY "Users can update own sessions" ON exam_sessions
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Questions are viewable by everyone" ON questions
   FOR SELECT USING (true);
+
+-- ============================================
+-- 迁移脚本：移除外键约束（匿名用户支持）
+-- 运行时机：需要使用匿名做题记录功能时执行
+-- ============================================
+-- 移除 user_progress 和 exam_sessions 的 auth.users 外键约束
+-- 这样可以用任意 UUID 作为匿名用户 ID 保存做题记录
+-- ALTER TABLE user_progress DROP CONSTRAINT IF EXISTS user_progress_user_id_fkey;
+-- ALTER TABLE exam_sessions DROP CONSTRAINT IF EXISTS exam_sessions_user_id_fkey;
+--
+-- 为 user_progress 添加更宽松的 RLS 策略（允许 service_role 插入/查询任意 user_id）
+-- CREATE POLICY "Service role can manage all progress" ON user_progress
+--   FOR ALL USING (true) WITH CHECK (true);
+-- CREATE POLICY "Service role can manage all sessions" ON exam_sessions
+--   FOR ALL USING (true) WITH CHECK (true);

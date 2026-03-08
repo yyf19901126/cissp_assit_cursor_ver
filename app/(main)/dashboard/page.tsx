@@ -14,8 +14,10 @@ import {
   ArrowRight,
   Loader2,
   Database,
+  ListOrdered,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { getAnonymousUserId } from '@/lib/anonymous-user';
 
 // 初始空数据
 const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
@@ -46,7 +48,8 @@ export default function DashboardPage() {
 
   async function fetchProgress() {
     try {
-      const res = await fetch('/api/quiz/progress');
+      const userId = getAnonymousUserId();
+      const res = await fetch(`/api/quiz/progress?user_id=${userId}`);
       if (res.ok) {
         const data = await res.json();
         if (data.domains) {
@@ -249,6 +252,22 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3">
                 <Target size={20} />
                 <span className="font-medium">模拟考试 (125题 / 180分钟)</span>
+              </div>
+              <ArrowRight size={18} />
+            </button>
+            <button
+              onClick={() => router.push('/quiz?mode=sequential')}
+              className={clsx(
+                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                overallStats.total_questions > 0
+                  ? 'bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 shadow-green-500/20'
+                  : 'bg-gray-400 cursor-not-allowed shadow-none'
+              )}
+              disabled={overallStats.total_questions === 0}
+            >
+              <div className="flex items-center gap-3">
+                <ListOrdered size={20} />
+                <span className="font-medium">顺序刷题（可暂停续做）</span>
               </div>
               <ArrowRight size={18} />
             </button>

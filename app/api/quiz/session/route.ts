@@ -5,7 +5,13 @@ import crypto from 'crypto';
 export const dynamic = 'force-dynamic';
 
 // POST /api/quiz/session
-// 创建考试/练习会话
+// 创建考试/练习/顺序刷题会话
+// Body: {
+//   user_id?, mode, question_count?,
+//   domain? (单域,向后兼容), domains? (多域数组),
+//   start_from? (顺序模式: 从第几题开始, question_number),
+//   time_limit?
+// }
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -13,16 +19,36 @@ export async function POST(request: NextRequest) {
       user_id,
       mode = 'practice',
       question_count = 25,
-      domain,
+      domain,       // 单域 (向后兼容)
+      domains,      // 多域数组
+      start_from,   // 顺序模式: 起始 question_number
       time_limit,
     } = body;
 
     const supabase = createServiceClient();
 
-    // 获取题目（突破默认 1000 行限制）
-    let query = supabase.from('questions').select('id').range(0, 9999);
-    if (domain) {
-      query = query.eq('domain', domain);
+    // 构建查询
+    let query = supabase.from('questions').select('id, question_number').range(0, 9999);
+
+    // 域筛选：优先使用 domains 数组，否则使用 domain 单值
+    const domainFilter: number[] = domains && domains.length > 0
+      ? domains
+      : domain ? [domain] : [];
+
+    if (domainFilter.length === 1) {
+      query = query.eq('domain', domainFilter[0]);
+    } else if (domainFilter.length > 1) {
+      query = query.in('domain', domainFilter);
+    }
+
+    // 顺序模式：从指定题号之后开始
+    if (mode === 'sequential' && start_from !== undefined && start_from > 0) {
+      query = query.gt('question_number', start_from);
+    }
+
+    // 顺序模式始终按题号排序
+    if (mode === 'sequential') {
+      query = query.order('question_number', { ascending: true });
     }
 
     const { data: allQuestions, error } = await query;
@@ -33,41 +59,44 @@ export async function POST(request: NextRequest) {
     }
 
     if (!allQuestions || allQuestions.length === 0) {
+      if (mode === 'sequential' && start_from) {
+        return NextResponse.json({
+          error: 'no_more_questions',
+          message: '已完成所有题目！',
+        }, { status: 200 });
+      }
       return NextResponse.json({ error: '没有可用的题目，请先导入题库' }, { status: 404 });
     }
 
-    // 随机选取指定数量的题目
-    const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, Math.min(question_count, shuffled.length));
-    const questionIds = selected.map((q: any) => q.id);
+    let questionIds: string[];
+    let totalAvailable = allQuestions.length;
 
-    // 如果有 user_id，尝试写入 exam_sessions 表
-    if (user_id) {
-      const sessionData = {
-        user_id,
-        mode,
-        total_questions: questionIds.length,
-        current_index: 0,
-        question_ids: questionIds,
-        answers: {},
-        time_limit: mode === 'exam' ? (time_limit || 180) : null,
-      };
-
-      const { data: session, error: sessionError } = await supabase
-        .from('exam_sessions')
-        .insert(sessionData)
-        .select()
-        .single();
-
-      if (sessionError) {
-        console.error('Session insert error:', sessionError);
-        // 即使写入失败，也返回虚拟会话让用户能答题
-      } else {
-        return NextResponse.json({ session });
-      }
+    if (mode === 'sequential') {
+      // 顺序模式：取前 question_count 题（保持顺序）
+      const batch = allQuestions.slice(0, Math.min(question_count, allQuestions.length));
+      questionIds = batch.map((q: any) => q.id);
+    } else {
+      // 随机模式（练习/考试）
+      const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, Math.min(question_count, shuffled.length));
+      questionIds = selected.map((q: any) => q.id);
     }
 
-    // 无 user_id 或写入失败时，返回虚拟会话（不持久化到数据库）
+    // 查询总题数（用于顺序模式显示进度）
+    let grandTotal = totalAvailable;
+    if (mode === 'sequential') {
+      // 查询不带 start_from 的总数
+      let totalQuery = supabase.from('questions').select('*', { count: 'exact', head: true });
+      if (domainFilter.length === 1) {
+        totalQuery = totalQuery.eq('domain', domainFilter[0]);
+      } else if (domainFilter.length > 1) {
+        totalQuery = totalQuery.in('domain', domainFilter);
+      }
+      const { count } = await totalQuery;
+      grandTotal = count || totalAvailable;
+    }
+
+    // 构建虚拟会话
     const virtualSession = {
       id: crypto.randomUUID(),
       mode,
@@ -77,10 +106,15 @@ export async function POST(request: NextRequest) {
       answers: {},
       time_limit: mode === 'exam' ? (time_limit || 180) : null,
       start_time: new Date().toISOString(),
-      is_virtual: true, // 标记为虚拟会话
+      is_virtual: true,
     };
 
-    return NextResponse.json({ session: virtualSession });
+    return NextResponse.json({
+      session: virtualSession,
+      total_available: totalAvailable,   // 此次可用题目数
+      grand_total: grandTotal,           // 题库总题数（按筛选条件）
+      has_more: totalAvailable > questionIds.length, // 是否还有更多题
+    });
   } catch (error: any) {
     console.error('Session API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
