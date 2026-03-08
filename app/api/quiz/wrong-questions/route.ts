@@ -13,8 +13,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const userId = authUser.sub;
-    console.log('[WrongQ API] userId from token:', userId);
-
+    
+    // 显示数据库连接信息（用于排查 Vercel 和本地数据不一致问题）
+    const dbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'NOT_SET';
+    const dbUrlPreview = dbUrl.length > 20 ? dbUrl.substring(0, 20) + '...' : dbUrl;
+    console.log('[WrongQ API] userId:', userId, '| DB URL:', dbUrlPreview);
+    
     const supabase = createServiceClient();
 
     // ═══════════════════ 获取错题数据（避免 join 在 Vercel 上的问题）═══════════════════
@@ -136,6 +140,7 @@ export async function GET(request: NextRequest) {
       _debug: {
         version: '2.0.0', // API 版本标识，用于确认 Vercel 是否运行最新代码
         timestamp: new Date().toISOString(),
+        db_url_preview: dbUrlPreview, // 数据库 URL 预览（用于确认 Vercel 和本地是否连接同一数据库）
         total_wrong_records: wrongRecords?.length || 0,
         grouped_count: groupedQuestionIds.length,
         mastered_count: questions.filter((q: any) => q.is_mastered).length,
