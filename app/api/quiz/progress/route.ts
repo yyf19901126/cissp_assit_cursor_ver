@@ -60,34 +60,44 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 先做一个简单的 count 查询（不用 join），确认数据存在
-    const { count: rawCount, error: rawCountErr } = await supabase
-      .from('user_progress')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-    console.log('[Progress API] raw count for userId', userId, ':', rawCount, rawCountErr ? 'ERR:'+rawCountErr.message : 'OK');
-
-    // 获取用户答题数据（带 join）
+    // ═══════════════════ 获取用户答题数据 ═══════════════════
+    // 策略：先查 user_progress，再查 questions，避免 join 在 Vercel 上的问题
     let progressData: any[] = [];
-    const { data, error: progressError } = await supabase
+    
+    // 1. 先查 user_progress（不 join）
+    const { data: progressRecords, error: progressError } = await supabase
       .from('user_progress')
-      .select('question_id, is_correct, questions!inner(domain)')
+      .select('question_id, is_correct')
       .eq('user_id', userId);
 
     if (progressError) {
-      console.error('[Progress] Error fetching user progress (with join):', progressError);
-      // 如果 join 失败，尝试不用 join
-      const { data: fallbackData, error: fallbackErr } = await supabase
-        .from('user_progress')
-        .select('question_id, is_correct')
-        .eq('user_id', userId);
-      if (!fallbackErr && fallbackData) {
-        console.log('[Progress] Fallback query returned:', fallbackData.length, 'records');
-        progressData = fallbackData;
+      console.error('[Progress] Error fetching user_progress:', progressError);
+    } else if (progressRecords && progressRecords.length > 0) {
+      // 2. 获取所有 question_id
+      const questionIds = [...new Set(progressRecords.map((r) => r.question_id))];
+      
+      // 3. 批量查询 questions 获取 domain
+      const { data: questionsData, error: questionsError } = await supabase
+        .from('questions')
+        .select('id, domain')
+        .in('id', questionIds);
+
+      if (questionsError) {
+        console.error('[Progress] Error fetching questions:', questionsError);
+        // 即使 questions 查询失败，也使用 progressRecords（只是没有 domain 信息）
+        progressData = progressRecords.map((r) => ({ ...r, questions: null }));
+      } else {
+        // 4. 在内存中合并数据
+        const questionMap = new Map((questionsData || []).map((q) => [q.id, q.domain]));
+        progressData = progressRecords.map((r) => ({
+          question_id: r.question_id,
+          is_correct: r.is_correct,
+          questions: { domain: questionMap.get(r.question_id) || null },
+        }));
       }
+      console.log('[Progress API] Fetched', progressData.length, 'records (method: separate queries)');
     } else {
-      progressData = data || [];
-      console.log('[Progress API] join query returned:', progressData.length, 'records');
+      console.log('[Progress API] No progress records found for user', userId);
     }
 
     const progress = domains.map((d) => {
@@ -127,8 +137,8 @@ export async function GET(request: NextRequest) {
       },
       _debug: {
         user_id: userId,
-        raw_progress_count: rawCount,
-        join_progress_count: progressData.length,
+        progress_count: progressData.length,
+        method: 'separate_queries',
       },
     });
   } catch (error: any) {

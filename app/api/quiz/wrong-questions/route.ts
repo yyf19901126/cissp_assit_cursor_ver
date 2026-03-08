@@ -17,43 +17,50 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServiceClient();
 
-    // 先简单 count
-    const { count: rawWrongCount } = await supabase
+    // ═══════════════════ 获取错题数据（避免 join 在 Vercel 上的问题）═══════════════════
+    // 1. 先查 user_progress 中的错题记录
+    const { data: wrongRecords, error: progressError } = await supabase
       .from('user_progress')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('is_correct', false);
-    console.log('[WrongQ API] raw wrong count:', rawWrongCount);
-
-    // 查询所有答错的记录，关联题目信息
-    const { data, error } = await supabase
-      .from('user_progress')
-      .select(`
-        id,
-        question_id,
-        user_answer,
-        is_correct,
-        created_at,
-        questions!inner (
-          id,
-          question_number,
-          domain,
-          question_text,
-          options,
-          correct_answer,
-          base_explanation,
-          keywords
-        )
-      `)
+      .select('id, question_id, user_answer, is_correct, created_at')
       .eq('user_id', userId)
       .eq('is_correct', false)
       .order('created_at', { ascending: false })
       .range(0, 999);
 
-    if (error) {
-      console.error('Wrong questions query error:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (progressError) {
+      console.error('[WrongQ] Error fetching wrong records:', progressError);
+      return NextResponse.json({ error: progressError.message }, { status: 500 });
     }
+
+    if (!wrongRecords || wrongRecords.length === 0) {
+      console.log('[WrongQ] No wrong records found');
+      return NextResponse.json({ questions: [] });
+    }
+
+    // 2. 获取所有 question_id
+    const questionIds = [...new Set(wrongRecords.map((r) => r.question_id))];
+
+    // 3. 批量查询 questions 表
+    const { data: questionsData, error: questionsError } = await supabase
+      .from('questions')
+      .select('id, question_number, domain, question_text, options, correct_answer, base_explanation, keywords')
+      .in('id', questionIds);
+
+    if (questionsError) {
+      console.error('[WrongQ] Error fetching questions:', questionsError);
+      return NextResponse.json({ error: questionsError.message }, { status: 500 });
+    }
+
+    // 4. 在内存中合并数据
+    const questionMap = new Map((questionsData || []).map((q) => [q.id, q]));
+    const data = wrongRecords.map((r) => ({
+      id: r.id,
+      question_id: r.question_id,
+      user_answer: r.user_answer,
+      is_correct: r.is_correct,
+      created_at: r.created_at,
+      questions: questionMap.get(r.question_id) || null,
+    }));
 
     // 按 question_id 分组，合并多次错误
     const grouped: Record<string, any> = {};
