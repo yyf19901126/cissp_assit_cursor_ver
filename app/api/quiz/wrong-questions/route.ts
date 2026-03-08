@@ -86,15 +86,15 @@ export async function GET(request: NextRequest) {
     }
 
     // 检查是否已掌握（最近一次答对了）
-    const questionIds = Object.keys(grouped);
-    if (questionIds.length > 0) {
+    const groupedQuestionIds = Object.keys(grouped);
+    if (groupedQuestionIds.length > 0) {
       // 查询这些题目的所有正确记录
       const { data: correctData } = await supabase
         .from('user_progress')
         .select('question_id, created_at')
         .eq('user_id', userId)
         .eq('is_correct', true)
-        .in('question_id', questionIds)
+        .in('question_id', groupedQuestionIds)
         .order('created_at', { ascending: false });
 
       if (correctData) {
