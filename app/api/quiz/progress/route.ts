@@ -243,16 +243,19 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // ═══════════════════ 禁用所有缓存（包括 Vercel Edge Functions 缓存）═══════════════════
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, s-maxage=0');
+    // ═══════════════════ 彻底禁用所有缓存（包括 Vercel 边缘网络缓存）═══════════════════
+    // 关键：告诉 CDN 不要缓存，并且每次都要回源验证，禁用 SWR (Stale-While-Revalidate)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
     response.headers.set('X-Content-Type-Options', 'nosniff');
-    // Vercel 特定的缓存控制
+    // Vercel 特定的缓存控制（必须设置）
     response.headers.set('CDN-Cache-Control', 'no-store');
     response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
     // 添加随机数确保每次响应都不同（防止 Edge Functions 缓存）
     response.headers.set('X-Response-Id', `${Date.now()}-${Math.random().toString(36).substring(7)}`);
+    // 明确告诉 Vercel 不要使用 SWR
+    response.headers.set('X-Vercel-Cache-Control', 'no-store');
 
     return response;
   } catch (error: any) {
