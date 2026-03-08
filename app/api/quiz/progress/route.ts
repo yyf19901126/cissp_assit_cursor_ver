@@ -153,6 +153,13 @@ export async function GET(request: NextRequest) {
         .map((p: any) => p.question_id)
     );
     const totalCorrect = correctQuestionIds.size;
+    
+    console.log('[Progress API] Deduplication stats:', {
+      raw_count: progressData.length,
+      unique_questions: totalAnswered,
+      correct_questions: totalCorrect,
+      wrong_questions: totalAnswered - totalCorrect,
+    });
 
     const response = NextResponse.json({
       domains: progress,
@@ -167,6 +174,8 @@ export async function GET(request: NextRequest) {
         raw_progress_count: progressData.length, // 原始记录数（未去重）
         unique_questions: totalAnswered, // 去重后的题目数
         method: 'separate_queries',
+        version: '2.0.0', // API 版本标识，用于确认 Vercel 是否运行最新代码
+        timestamp: new Date().toISOString(),
       },
     });
 

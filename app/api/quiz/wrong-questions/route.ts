@@ -98,11 +98,23 @@ export async function GET(request: NextRequest) {
         .order('created_at', { ascending: false });
 
       if (correctData) {
+        // 为每个题目找到最新的正确记录
+        const latestCorrectByQuestion = new Map<string, Date>();
         for (const correct of correctData) {
           const qId = correct.question_id;
-          if (grouped[qId]) {
+          const correctDate = new Date(correct.created_at);
+          if (!latestCorrectByQuestion.has(qId) || correctDate > latestCorrectByQuestion.get(qId)!) {
+            latestCorrectByQuestion.set(qId, correctDate);
+          }
+        }
+
+        // 检查每个错题是否已掌握
+        for (const qId of groupedQuestionIds) {
+          const latestCorrect = latestCorrectByQuestion.get(qId);
+          if (latestCorrect && grouped[qId]) {
+            const lastWrongDate = new Date(grouped[qId].last_attempt_at);
             // 如果最近一次正确的时间晚于最近一次错误的时间，标记为已掌握
-            if (new Date(correct.created_at) > new Date(grouped[qId].last_attempt_at)) {
+            if (latestCorrect > lastWrongDate) {
               grouped[qId].is_mastered = true;
             }
           }
@@ -110,9 +122,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    console.log('[WrongQ API] Stats:', {
+      total_wrong_records: wrongRecords?.length || 0,
+      grouped_count: groupedQuestionIds.length,
+      mastered_count: Object.values(grouped).filter((q: any) => q.is_mastered).length,
+      unmastered_count: Object.values(grouped).filter((q: any) => !q.is_mastered).length,
+    });
+
     const questions = Object.values(grouped);
 
-    const response = NextResponse.json({ questions });
+    const response = NextResponse.json({
+      questions,
+      _debug: {
+        version: '2.0.0', // API 版本标识，用于确认 Vercel 是否运行最新代码
+        timestamp: new Date().toISOString(),
+        total_wrong_records: wrongRecords?.length || 0,
+        grouped_count: groupedQuestionIds.length,
+        mastered_count: questions.filter((q: any) => q.is_mastered).length,
+        unmastered_count: questions.filter((q: any) => !q.is_mastered).length,
+      },
+    });
 
     // ═══════════════════ 禁用所有缓存 ═══════════════════
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
