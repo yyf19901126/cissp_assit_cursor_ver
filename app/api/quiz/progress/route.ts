@@ -69,22 +69,50 @@ export async function GET(request: NextRequest) {
     let progressData: any[] = [];
     
     // 1. 先查 user_progress（不 join，显式设置 limit 避免默认限制）
-    const { data: progressRecords, error: progressError, count: progressCount } = await supabase
+    // 注意：Supabase 默认 limit 是 1000，但 range(0, 9999) 应该能获取更多
+    // 为了确保获取所有记录，我们先查 count，然后分批获取
+    const { count: totalCount, error: countError } = await supabase
       .from('user_progress')
-      .select('question_id, is_correct', { count: 'exact' })
-      .eq('user_id', userId)
-      .range(0, 9999); // 显式设置范围，确保获取所有记录
-
-    console.log('[Progress API] user_progress query:', {
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    
+    console.log('[Progress API] Total count query:', {
       userId,
-      recordsReturned: progressRecords?.length || 0,
-      count: progressCount,
-      error: progressError?.message,
+      totalCount,
+      countError: countError?.message,
     });
 
-    if (progressError) {
-      console.error('[Progress] Error fetching user_progress:', progressError);
-    } else if (progressRecords && progressRecords.length > 0) {
+    // 分批获取所有记录（每批最多 1000 条，Supabase 的默认限制）
+    let progressRecords: any[] = [];
+    const BATCH_SIZE = 1000;
+    const totalBatches = totalCount ? Math.ceil(totalCount / BATCH_SIZE) : 1;
+    
+    for (let i = 0; i < totalBatches; i++) {
+      const from = i * BATCH_SIZE;
+      const to = from + BATCH_SIZE - 1;
+      const { data: batch, error: batchError } = await supabase
+        .from('user_progress')
+        .select('question_id, is_correct')
+        .eq('user_id', userId)
+        .range(from, to);
+      
+      if (batchError) {
+        console.error(`[Progress] Error fetching batch ${i}:`, batchError);
+        break;
+      }
+      if (batch) {
+        progressRecords = [...progressRecords, ...batch];
+      }
+    }
+
+    console.log('[Progress API] user_progress query result:', {
+      userId,
+      totalCount,
+      recordsReturned: progressRecords.length,
+      batches: totalBatches,
+    });
+
+    if (progressRecords && progressRecords.length > 0) {
       // 2. 获取所有 question_id
       const questionIds = [...new Set(progressRecords.map((r) => r.question_id))];
       console.log('[Progress API] Unique question_ids:', questionIds.length);

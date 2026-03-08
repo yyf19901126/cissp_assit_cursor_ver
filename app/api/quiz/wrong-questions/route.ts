@@ -22,24 +22,54 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient();
 
     // ═══════════════════ 获取错题数据（避免 join 在 Vercel 上的问题）═══════════════════
-    // 1. 先查 user_progress 中的错题记录
-    const { data: wrongRecords, error: progressError } = await supabase
+    // 1. 先查错题总数
+    const { count: wrongCount, error: countError } = await supabase
       .from('user_progress')
-      .select('id, question_id, user_answer, is_correct, created_at')
+      .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('is_correct', false)
-      .order('created_at', { ascending: false })
-      .range(0, 999);
+      .eq('is_correct', false);
+    
+    console.log('[WrongQ API] Wrong count query:', {
+      userId,
+      wrongCount,
+      countError: countError?.message,
+    });
 
-    if (progressError) {
-      console.error('[WrongQ] Error fetching wrong records:', progressError);
-      return NextResponse.json({ error: progressError.message }, { status: 500 });
-    }
-
-    if (!wrongRecords || wrongRecords.length === 0) {
+    if (!wrongCount || wrongCount === 0) {
       console.log('[WrongQ] No wrong records found');
       return NextResponse.json({ questions: [] });
     }
+
+    // 2. 分批获取所有错题记录（每批最多 1000 条）
+    let wrongRecords: any[] = [];
+    const BATCH_SIZE = 1000;
+    const totalBatches = Math.ceil(wrongCount / BATCH_SIZE);
+    
+    for (let i = 0; i < totalBatches; i++) {
+      const from = i * BATCH_SIZE;
+      const to = from + BATCH_SIZE - 1;
+      const { data: batch, error: batchError } = await supabase
+        .from('user_progress')
+        .select('id, question_id, user_answer, is_correct, created_at')
+        .eq('user_id', userId)
+        .eq('is_correct', false)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      
+      if (batchError) {
+        console.error(`[WrongQ] Error fetching batch ${i}:`, batchError);
+        return NextResponse.json({ error: batchError.message }, { status: 500 });
+      }
+      if (batch) {
+        wrongRecords = [...wrongRecords, ...batch];
+      }
+    }
+
+    console.log('[WrongQ API] Wrong records fetched:', {
+      totalCount: wrongCount,
+      recordsReturned: wrongRecords.length,
+      batches: totalBatches,
+    });
 
     // 2. 获取所有 question_id
     const questionIds = [...new Set(wrongRecords.map((r) => r.question_id))];
