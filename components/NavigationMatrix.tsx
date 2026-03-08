@@ -53,7 +53,6 @@ export default function NavigationMatrix({
           <div className="grid grid-cols-10 gap-1.5 max-h-96 overflow-y-auto">
             {Array.from({ length: totalQuestions }, (_, i) => {
               const qId = questionIds[i];
-              const isAnswered = qId && answers[qId];
               const isCurrent = i === currentIndex;
               const isCorrect = results && qId ? results[qId] : undefined;
 
@@ -70,8 +69,6 @@ export default function NavigationMatrix({
                       ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                       : isCorrect === false
                       ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                      : isAnswered
-                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
                       : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200'
                   )}
                 >
@@ -94,10 +91,6 @@ export default function NavigationMatrix({
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" />
               <span>错误</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/30" />
-              <span>已答</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded bg-gray-100 dark:bg-gray-800" />

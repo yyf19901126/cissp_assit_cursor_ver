@@ -406,6 +406,22 @@ function QuizContent() {
           };
           await saveSequentialProgress(newProgress);
           setSequentialProgressState(newProgress);
+
+          // 刷新已答题状态（确保导航矩阵立即更新）
+          try {
+            const statusRes = await fetch('/api/quiz/sequential-answered-status?' + Date.now(), {
+              credentials: 'include',
+              cache: 'no-store',
+            });
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              setSequentialAnsweredNumbers(new Set(Object.keys(statusData.answered || {}).map(Number)));
+              setSequentialCorrectNumbers(new Set(statusData.correct || []));
+              setSequentialWrongNumbers(new Set(statusData.wrong || []));
+            }
+          } catch (err) {
+            console.error('Failed to refresh answered status:', err);
+          }
         }
         return;
       }
@@ -1108,12 +1124,7 @@ function QuizContent() {
             currentIndex={mode === 'sequential' ? sequentialCurrentQuestionNumber - 1 : currentIndex}
             answers={
               mode === 'sequential'
-                ? Object.fromEntries(
-                    Array.from(sequentialAnsweredNumbers).map((qNum) => {
-                      const question = sequentialQuestionMap.get(qNum);
-                      return question ? [question.id, 'answered'] : [`placeholder-${qNum}`, 'answered'];
-                    })
-                  )
+                ? {} // 顺序模式不需要answers，只使用results
                 : answers
             }
             questionIds={
@@ -1127,14 +1138,27 @@ function QuizContent() {
             }
             results={
               mode === 'sequential'
-                ? Object.fromEntries(
-                    Array.from(sequentialAnsweredNumbers).map((qNum) => {
+                ? (() => {
+                    // 构建所有题目的results映射
+                    const resultsMap: Record<string, boolean> = {};
+                    
+                    // 1. 从已答题状态集合构建（从数据库获取的）
+                    Array.from(sequentialAnsweredNumbers).forEach((qNum) => {
                       const question = sequentialQuestionMap.get(qNum);
-                      if (!question) return [`placeholder-${qNum}`, false];
+                      const qId = question?.id || `placeholder-${qNum}`;
                       const isCorrect = sequentialCorrectNumbers.has(qNum);
-                      return [question.id, isCorrect];
-                    })
-                  )
+                      resultsMap[qId] = isCorrect;
+                    });
+                    
+                    // 2. 从当前results中更新（刚答的题，优先级更高）
+                    Object.entries(results).forEach(([id, r]) => {
+                      if (r && typeof r === 'object' && 'is_correct' in r) {
+                        resultsMap[id] = r.is_correct;
+                      }
+                    });
+                    
+                    return resultsMap;
+                  })()
                 : mode !== 'exam'
                 ? Object.fromEntries(
                     Object.entries(results).map(([id, r]) => [id, r.is_correct])

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { getUserFromRequest } from '@/lib/auth';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,10 @@ export const dynamic = 'force-dynamic';
 // 获取顺序刷题模式下所有已答题的状态（题号 -> 答题结果）
 export async function GET(request: NextRequest) {
   try {
+    // ═══════════════════ 禁用 Next.js 缓存 ═══════════════════
+    revalidatePath('/api/quiz/sequential-answered-status');
+    revalidateTag('sequential-answered-status');
+
     const authUser = await getUserFromRequest(request);
     if (!authUser) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
@@ -93,11 +98,24 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       answered,
       correct,
       wrong,
+      _timestamp: new Date().toISOString(), // 确保唯一响应
     });
+
+    // 禁用所有缓存（包括 Vercel Edge Functions 缓存）
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+    response.headers.set('X-Vercel-Cache-Control', 'no-store');
+    response.headers.set('X-Response-Id', `${Date.now()}-${Math.random().toString(36).substring(7)}`);
+
+    return response;
   } catch (error: any) {
     console.error('Sequential answered status API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
