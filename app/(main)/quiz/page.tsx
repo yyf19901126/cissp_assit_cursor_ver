@@ -1073,7 +1073,7 @@ function QuizContent() {
                 </button>
               ) : (
                 <button
-                  onClick={() => goToQuestion(sequentialCurrentQuestionNumber)}
+                  onClick={() => goToQuestion(sequentialCurrentQuestionNumber + 1)}
                   disabled={isLoadingQuestionByNumber}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors disabled:opacity-50"
                 >
