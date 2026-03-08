@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { CISSP_DOMAINS, Question } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,33 +27,50 @@ interface WrongQuestionItem {
 
 export default function WrongQuestionsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<number | null>(null);
   const [showMastered, setShowMastered] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchWrongQuestions();
-  }, []);
-
-  async function fetchWrongQuestions() {
+  const fetchWrongQuestions = useCallback(async () => {
+    setFetchError(null);
+    setIsLoading(true);
     try {
       const res = await fetch('/api/quiz/wrong-questions', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
+        console.log('[WrongQuestions] API returned', (data.questions || []).length, 'questions');
         setWrongQuestions(data.questions || []);
       } else if (res.status === 401) {
+        console.log('[WrongQuestions] 401 - redirecting to login');
+        setFetchError('未登录，正在跳转...');
         router.push('/login');
         return;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error('[WrongQuestions] API error:', res.status, errData);
+        setFetchError(`加载失败: ${errData.error || res.status}`);
       }
-    } catch {
-      // 网络错误
+    } catch (err: any) {
+      console.error('[WrongQuestions] Fetch error:', err);
+      setFetchError(`网络错误: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [router]);
+
+  // 当认证完成且有用户时获取数据
+  useEffect(() => {
+    if (!authLoading && user) {
+      fetchWrongQuestions();
+    } else if (!authLoading && !user) {
+      // 认证完成但无用户 → 跳转登录
+      setIsLoading(false);
+    }
+  }, [authLoading, user, fetchWrongQuestions]);
 
   const filteredQuestions = wrongQuestions.filter((wq) => {
     if (selectedDomain && wq.question.domain !== selectedDomain) return false;
@@ -90,6 +107,19 @@ export default function WrongQuestionsPage() {
           记录你做错的题目，针对性复习薄弱知识点
         </p>
       </div>
+
+      {/* 错误提示 */}
+      {fetchError && (
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center justify-between">
+          <span className="text-red-700 dark:text-red-300 text-sm">⚠️ {fetchError}</span>
+          <button
+            onClick={fetchWrongQuestions}
+            className="px-3 py-1 rounded-lg bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 text-sm font-medium hover:bg-red-200"
+          >
+            重试
+          </button>
+        </div>
+      )}
 
       {/* 域过滤器 */}
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4">

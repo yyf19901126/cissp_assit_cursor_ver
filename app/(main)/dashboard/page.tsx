@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DomainRadarChart from '@/components/DomainRadarChart';
 import { DomainProgress, CISSP_DOMAINS } from '@/types/database';
@@ -32,7 +32,7 @@ const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [domainProgress, setDomainProgress] = useState<DomainProgress[]>(emptyDomainProgress);
   const [overallStats, setOverallStats] = useState({
     total_questions: 0,
@@ -43,15 +43,14 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProgress();
-  }, []);
-
-  async function fetchProgress() {
+  const fetchProgress = useCallback(async () => {
+    setError(null);
+    setIsLoading(true);
     try {
       const res = await fetch('/api/quiz/progress', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
+        console.log('[Dashboard] Progress loaded:', data.overall?.total_answered, 'answered');
         if (data.domains) {
           setDomainProgress(data.domains);
         }
@@ -59,19 +58,31 @@ export default function DashboardPage() {
           setOverallStats(data.overall);
         }
       } else if (res.status === 401) {
+        console.log('[Dashboard] 401 - redirecting to login');
         setError('未登录，请重新登录');
         router.push('/login');
         return;
       } else {
         const errData = await res.json().catch(() => ({}));
+        console.error('[Dashboard] API error:', res.status, errData);
         setError(errData.error || '无法连接数据库，请检查环境变量配置');
       }
     } catch (err) {
+      console.error('[Dashboard] Fetch error:', err);
       setError('网络错误，请稍后重试');
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [router]);
+
+  // 当认证完成且有用户时获取数据
+  useEffect(() => {
+    if (!authLoading && user) {
+      fetchProgress();
+    } else if (!authLoading && !user) {
+      setIsLoading(false);
+    }
+  }, [authLoading, user, fetchProgress]);
 
   const weakestDomains = [...domainProgress]
     .filter((d) => d.answered_questions > 0)
@@ -103,8 +114,14 @@ export default function DashboardPage() {
 
       {/* 错误提示 */}
       {error && (
-        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
-          ⚠️ {error}
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center justify-between">
+          <span className="text-red-700 dark:text-red-300 text-sm">⚠️ {error}</span>
+          <button
+            onClick={fetchProgress}
+            className="px-3 py-1 rounded-lg bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 text-sm font-medium hover:bg-red-200"
+          >
+            重试
+          </button>
         </div>
       )}
 
