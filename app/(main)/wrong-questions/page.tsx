@@ -10,6 +10,8 @@ import {
   Filter,
   ChevronDown,
   BookOpen,
+  Loader2,
+  Inbox,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -22,93 +24,32 @@ interface WrongQuestionItem {
   is_mastered: boolean;
 }
 
-// 模拟错题数据
-const MOCK_WRONG_QUESTIONS: WrongQuestionItem[] = [
-  {
-    id: 'w1',
-    question: {
-      id: 'mock-1',
-      question_number: 42,
-      domain: 1,
-      question_text:
-        'What is the MOST important consideration when developing a business continuity plan?',
-      options: [
-        { label: 'A', text: 'IT recovery procedures' },
-        { label: 'B', text: 'Business impact analysis' },
-        { label: 'C', text: 'Insurance coverage' },
-        { label: 'D', text: 'Emergency communication plans' },
-      ],
-      correct_answer: 'B',
-      base_explanation:
-        'BIA is the foundation of BCP. It identifies critical functions and their dependencies.',
-      keywords: ['MOST'],
-      created_at: new Date().toISOString(),
-    },
-    user_answer: 'A',
-    attempt_count: 2,
-    last_attempt_at: new Date().toISOString(),
-    is_mastered: false,
-  },
-  {
-    id: 'w2',
-    question: {
-      id: 'mock-2',
-      question_number: 89,
-      domain: 4,
-      question_text:
-        'Which protocol operates at the Network layer and provides connectionless communication?',
-      options: [
-        { label: 'A', text: 'TCP' },
-        { label: 'B', text: 'UDP' },
-        { label: 'C', text: 'IP' },
-        { label: 'D', text: 'HTTP' },
-      ],
-      correct_answer: 'C',
-      base_explanation:
-        'IP (Internet Protocol) operates at the Network layer (Layer 3) and provides connectionless, best-effort delivery.',
-      keywords: ['Network layer', 'connectionless'],
-      created_at: new Date().toISOString(),
-    },
-    user_answer: 'B',
-    attempt_count: 1,
-    last_attempt_at: new Date().toISOString(),
-    is_mastered: false,
-  },
-  {
-    id: 'w3',
-    question: {
-      id: 'mock-3',
-      question_number: 156,
-      domain: 7,
-      question_text:
-        'What is the PRIMARY goal of incident response?',
-      options: [
-        { label: 'A', text: 'Punishing attackers' },
-        { label: 'B', text: 'Minimizing damage and recovery time' },
-        { label: 'C', text: 'Collecting forensic evidence' },
-        { label: 'D', text: 'Notifying law enforcement' },
-      ],
-      correct_answer: 'B',
-      base_explanation:
-        'The primary goal of incident response is to minimize the impact and reduce the recovery time and costs.',
-      keywords: ['PRIMARY'],
-      created_at: new Date().toISOString(),
-    },
-    user_answer: 'C',
-    attempt_count: 3,
-    last_attempt_at: new Date().toISOString(),
-    is_mastered: false,
-  },
-];
-
 export default function WrongQuestionsPage() {
   const router = useRouter();
-  const [wrongQuestions, setWrongQuestions] =
-    useState<WrongQuestionItem[]>(MOCK_WRONG_QUESTIONS);
+  const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<number | null>(null);
   const [showMastered, setShowMastered] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchWrongQuestions();
+  }, []);
+
+  async function fetchWrongQuestions() {
+    try {
+      // TODO: 当用户认证实现后，通过 API 获取真实错题数据
+      // const res = await fetch('/api/quiz/wrong-questions');
+      // if (res.ok) {
+      //   const data = await res.json();
+      //   setWrongQuestions(data.questions || []);
+      // }
+    } catch {
+      // 网络错误
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const filteredQuestions = wrongQuestions.filter((wq) => {
     if (selectedDomain && wq.question.domain !== selectedDomain) return false;
@@ -121,6 +62,17 @@ export default function WrongQuestionsPage() {
     ...d,
     count: wrongQuestions.filter((wq) => wq.question.domain === d.id).length,
   }));
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="animate-spin text-indigo-500" size={40} />
+          <p className="text-gray-500">加载错题记录...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -181,19 +133,21 @@ export default function WrongQuestionsPage() {
             />
             显示已掌握
           </label>
-          <button
-            onClick={() =>
-              router.push(
-                `/quiz?mode=practice${
-                  selectedDomain ? `&domain=${selectedDomain}` : ''
-                }`
-              )
-            }
-            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            <RotateCcw size={16} />
-            重做错题
-          </button>
+          {wrongQuestions.length > 0 && (
+            <button
+              onClick={() =>
+                router.push(
+                  `/quiz?mode=practice${
+                    selectedDomain ? `&domain=${selectedDomain}` : ''
+                  }`
+                )
+              }
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              <RotateCcw size={16} />
+              重做错题
+            </button>
+          )}
         </div>
       </div>
 
@@ -201,13 +155,23 @@ export default function WrongQuestionsPage() {
       <div className="space-y-4">
         {filteredQuestions.length === 0 ? (
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-12 text-center">
-            <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
+            <Inbox size={48} className="mx-auto text-gray-300 dark:text-gray-600 mb-4" />
             <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">
-              {selectedDomain ? '该域暂无错题' : '暂无错题记录'}
+              {wrongQuestions.length === 0 ? '暂无错题记录' : '该域暂无错题'}
             </h3>
             <p className="text-gray-500 text-sm mt-2">
-              继续答题，错题会自动收录到这里
+              {wrongQuestions.length === 0
+                ? '开始答题后，错题会自动收录到这里'
+                : '试试其他筛选条件'}
             </p>
+            {wrongQuestions.length === 0 && (
+              <button
+                onClick={() => router.push('/quiz?mode=practice')}
+                className="mt-4 px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                去做题
+              </button>
+            )}
           </div>
         ) : (
           filteredQuestions.map((wq) => (

@@ -12,30 +12,33 @@ import {
   AlertTriangle,
   Play,
   ArrowRight,
+  Loader2,
+  Database,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-// 模拟数据（Supabase 未连接时使用）
-const mockDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
+// 初始空数据
+const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
   domain_id: d.id as any,
   domain_name: d.name,
   domain_name_zh: d.nameZh,
-  total_questions: Math.floor(Math.random() * 200) + 100,
-  answered_questions: Math.floor(Math.random() * 80),
-  correct_count: Math.floor(Math.random() * 60),
-  accuracy: Math.floor(Math.random() * 60) + 30,
+  total_questions: 0,
+  answered_questions: 0,
+  correct_count: 0,
+  accuracy: 0,
 }));
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [domainProgress, setDomainProgress] = useState<DomainProgress[]>(mockDomainProgress);
+  const [domainProgress, setDomainProgress] = useState<DomainProgress[]>(emptyDomainProgress);
   const [overallStats, setOverallStats] = useState({
-    total_questions: 1500,
+    total_questions: 0,
     total_answered: 0,
     total_correct: 0,
     accuracy: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProgress();
@@ -46,24 +49,37 @@ export default function DashboardPage() {
       const res = await fetch('/api/quiz/progress');
       if (res.ok) {
         const data = await res.json();
-        if (data.domains && data.domains.length > 0) {
+        if (data.domains) {
           setDomainProgress(data.domains);
         }
         if (data.overall) {
           setOverallStats(data.overall);
         }
+      } else {
+        setError('无法连接数据库，请检查环境变量配置');
       }
     } catch (err) {
-      // 使用模拟数据
-      console.log('使用模拟数据');
+      setError('网络错误，请稍后重试');
     } finally {
       setIsLoading(false);
     }
   }
 
   const weakestDomains = [...domainProgress]
+    .filter((d) => d.answered_questions > 0)
     .sort((a, b) => a.accuracy - b.accuracy)
     .slice(0, 3);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="animate-spin text-indigo-500" size={40} />
+          <p className="text-gray-500">加载学习进度...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
@@ -76,6 +92,35 @@ export default function DashboardPage() {
           跟踪你的 CISSP 复习进度，找到薄弱环节，针对性突破
         </p>
       </div>
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* 题库为空提示 */}
+      {!error && overallStats.total_questions === 0 && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-amber-200 dark:border-amber-800 p-8 text-center">
+          <Database size={48} className="mx-auto text-amber-500 mb-4" />
+          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-2">
+            题库为空
+          </h3>
+          <p className="text-gray-500 text-sm mb-4">
+            还没有导入题目，请先使用 PDF 解析脚本导入题库
+          </p>
+          <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-xs mb-4 max-w-md mx-auto">
+            npx ts-node scripts/parse-pdf.ts ./cissp-questions.pdf
+          </code>
+          <button
+            onClick={() => router.push('/settings')}
+            className="px-6 py-2 rounded-xl bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors"
+          >
+            查看导入说明
+          </button>
+        </div>
+      )}
 
       {/* 统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -90,9 +135,9 @@ export default function DashboardPage() {
           label="已完成"
           value={overallStats.total_answered.toString()}
           color="green"
-          sub={`${Math.round(
-            (overallStats.total_answered / Math.max(overallStats.total_questions, 1)) * 100
-          )}% 完成率`}
+          sub={overallStats.total_questions > 0 ? `${Math.round(
+            (overallStats.total_answered / overallStats.total_questions) * 100
+          )}% 完成率` : undefined}
         />
         <StatCard
           icon={<TrendingUp size={22} />}
@@ -112,68 +157,81 @@ export default function DashboardPage() {
         {/* 雷达图 */}
         <DomainRadarChart data={domainProgress} />
 
-        {/* 薄弱领域 */}
+        {/* 薄弱领域 + 快速操作 */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
             <AlertTriangle size={20} className="text-amber-500" />
             薄弱领域 Top 3
           </h3>
-          <div className="space-y-4">
-            {weakestDomains.map((d, i) => (
-              <div
-                key={d.domain_id}
-                className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800"
-              >
-                <span
-                  className={clsx(
-                    'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
-                    i === 0
-                      ? 'bg-red-100 text-red-600'
-                      : i === 1
-                      ? 'bg-amber-100 text-amber-600'
-                      : 'bg-yellow-100 text-yellow-600'
-                  )}
+
+          {weakestDomains.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-400 text-sm">还没有答题记录，开始练习后这里会显示薄弱领域</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {weakestDomains.map((d, i) => (
+                <div
+                  key={d.domain_id}
+                  className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800"
                 >
-                  {i + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
-                    Domain {d.domain_id}: {d.domain_name_zh}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className={clsx(
-                          'h-full rounded-full transition-all',
-                          d.accuracy < 50
-                            ? 'bg-red-500'
-                            : d.accuracy < 70
-                            ? 'bg-amber-500'
-                            : 'bg-green-500'
-                        )}
-                        style={{ width: `${d.accuracy}%` }}
-                      />
+                  <span
+                    className={clsx(
+                      'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
+                      i === 0
+                        ? 'bg-red-100 text-red-600'
+                        : i === 1
+                        ? 'bg-amber-100 text-amber-600'
+                        : 'bg-yellow-100 text-yellow-600'
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
+                      Domain {d.domain_id}: {d.domain_name_zh}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className={clsx(
+                            'h-full rounded-full transition-all',
+                            d.accuracy < 50
+                              ? 'bg-red-500'
+                              : d.accuracy < 70
+                              ? 'bg-amber-500'
+                              : 'bg-green-500'
+                          )}
+                          style={{ width: `${d.accuracy}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 w-10 text-right">
+                        {d.accuracy}%
+                      </span>
                     </div>
-                    <span className="text-xs font-medium text-gray-500 w-10 text-right">
-                      {d.accuracy}%
-                    </span>
                   </div>
+                  <button
+                    onClick={() => router.push(`/quiz?domain=${d.domain_id}`)}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium hover:bg-indigo-200 transition-colors"
+                  >
+                    强化
+                  </button>
                 </div>
-                <button
-                  onClick={() => router.push(`/quiz?domain=${d.domain_id}`)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium hover:bg-indigo-200 transition-colors"
-                >
-                  强化
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* 快速操作 */}
           <div className="mt-6 space-y-3">
             <button
               onClick={() => router.push('/quiz?mode=practice')}
-              className="w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/20"
+              className={clsx(
+                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                overallStats.total_questions > 0
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
+                  : 'bg-gray-400 cursor-not-allowed shadow-none'
+              )}
+              disabled={overallStats.total_questions === 0}
             >
               <div className="flex items-center gap-3">
                 <Play size={20} />
@@ -183,7 +241,13 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={() => router.push('/quiz?mode=exam')}
-              className="w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg shadow-purple-500/20"
+              className={clsx(
+                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                overallStats.total_questions > 0
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-purple-500/20'
+                  : 'bg-gray-400 cursor-not-allowed shadow-none'
+              )}
+              disabled={overallStats.total_questions === 0}
             >
               <div className="flex items-center gap-3">
                 <Target size={20} />
@@ -283,7 +347,13 @@ export default function DashboardPage() {
                       onClick={() =>
                         router.push(`/quiz?domain=${d.domain_id}&mode=practice`)
                       }
-                      className="px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium hover:bg-blue-200 transition-colors"
+                      disabled={d.total_questions === 0}
+                      className={clsx(
+                        'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
+                        d.total_questions > 0
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      )}
                     >
                       练习
                     </button>

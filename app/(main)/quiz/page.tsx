@@ -13,102 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Trophy,
+  Loader2,
+  Database,
 } from 'lucide-react';
 import clsx from 'clsx';
-
-// 模拟题目数据（Supabase 未连接时使用）
-const MOCK_QUESTIONS: Question[] = [
-  {
-    id: 'mock-1',
-    question_number: 1,
-    domain: 1,
-    question_text:
-      'What is the MOST important reason for senior management to support information security?',
-    options: [
-      { label: 'A', text: 'To comply with regulatory requirements' },
-      { label: 'B', text: 'To ensure the organization meets its business objectives' },
-      { label: 'C', text: 'To protect the IT infrastructure' },
-      { label: 'D', text: 'To reduce IT operational costs' },
-    ],
-    correct_answer: 'B',
-    base_explanation:
-      'Senior management supports security primarily to ensure business objectives are met. While compliance and infrastructure protection are important, they serve the larger goal of business continuity and success.',
-    keywords: ['MOST', 'senior management'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-2',
-    question_number: 2,
-    domain: 1,
-    question_text:
-      'During a risk assessment, what should be the FIRST step?',
-    options: [
-      { label: 'A', text: 'Identify threats' },
-      { label: 'B', text: 'Identify and value assets' },
-      { label: 'C', text: 'Calculate risk exposure' },
-      { label: 'D', text: 'Implement controls' },
-    ],
-    correct_answer: 'B',
-    base_explanation:
-      'The first step in risk assessment is to identify and value assets. You cannot assess threats or calculate risk without first knowing what you are trying to protect.',
-    keywords: ['FIRST'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-3',
-    question_number: 3,
-    domain: 3,
-    question_text:
-      'Which of the following is the BEST description of the purpose of a security architecture?',
-    options: [
-      { label: 'A', text: 'To define the network topology' },
-      { label: 'B', text: 'To provide a framework for implementing security controls' },
-      { label: 'C', text: 'To identify all software vulnerabilities' },
-      { label: 'D', text: 'To determine staffing requirements' },
-    ],
-    correct_answer: 'B',
-    base_explanation:
-      'A security architecture provides a structured framework for implementing security controls aligned with business requirements.',
-    keywords: ['BEST'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-4',
-    question_number: 4,
-    domain: 5,
-    question_text:
-      'What is the PRIMARY purpose of identity management?',
-    options: [
-      { label: 'A', text: 'To encrypt all communications' },
-      { label: 'B', text: 'To manage user provisioning and de-provisioning' },
-      { label: 'C', text: 'To monitor network traffic' },
-      { label: 'D', text: 'To perform vulnerability scanning' },
-    ],
-    correct_answer: 'B',
-    base_explanation:
-      'The primary purpose of identity management is to manage the lifecycle of user identities, including provisioning, maintenance, and de-provisioning of accounts.',
-    keywords: ['PRIMARY'],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'mock-5',
-    question_number: 5,
-    domain: 7,
-    question_text:
-      'After a security incident has been contained, what is the NEXT step?',
-    options: [
-      { label: 'A', text: 'Eradication' },
-      { label: 'B', text: 'Recovery' },
-      { label: 'C', text: 'Lessons learned' },
-      { label: 'D', text: 'Notification' },
-    ],
-    correct_answer: 'A',
-    base_explanation:
-      'After containment, the next step is eradication - removing the cause of the incident. This is followed by recovery, then lessons learned.',
-    keywords: ['NEXT'],
-    created_at: new Date().toISOString(),
-  },
-];
 
 function QuizContent() {
   const searchParams = useSearchParams();
@@ -120,7 +28,7 @@ function QuizContent() {
   const [mode, setMode] = useState<'practice' | 'exam'>(
     modeParam as 'practice' | 'exam'
   );
-  const [questions, setQuestions] = useState<Question[]>(MOCK_QUESTIONS);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [results, setResults] = useState<
@@ -130,6 +38,8 @@ function QuizContent() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<number | null>(
     domainParam ? parseInt(domainParam) : null
@@ -155,7 +65,8 @@ function QuizContent() {
   }, [mode, isStarted, isCompleted, timeRemaining]);
 
   const startQuiz = useCallback(async () => {
-    setIsStarted(true);
+    setIsLoadingQuestions(true);
+    setLoadError(null);
     setCurrentIndex(0);
     setAnswers({});
     setResults({});
@@ -166,13 +77,8 @@ function QuizContent() {
       setTimeRemaining(180 * 60); // 180分钟
     }
 
-    // 尝试从 API 获取题目
+    // 从 API 获取题目
     try {
-      const params = new URLSearchParams();
-      params.set('mode', mode);
-      if (selectedDomain) params.set('domain', selectedDomain.toString());
-      params.set('question_count', mode === 'exam' ? '125' : '25');
-
       const res = await fetch(`/api/quiz/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,14 +89,65 @@ function QuizContent() {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        // 如果成功创建会话, 后续按会话获取
-        console.log('会话创建成功', data);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setLoadError(errData.error || '无法创建答题会话');
+        setIsLoadingQuestions(false);
+        return;
       }
-    } catch {
-      // 使用本地模拟题目
-      console.log('使用本地模拟题目');
+
+      const data = await res.json();
+      const session = data.session;
+
+      if (!session || !session.question_ids || session.question_ids.length === 0) {
+        setLoadError('题库为空，请先导入题目');
+        setIsLoadingQuestions(false);
+        return;
+      }
+
+      // 获取所有题目详情
+      const questionPromises = session.question_ids.map(async (qId: string) => {
+        const qRes = await fetch(`/api/quiz/next?session_id=${session.id}`);
+        return qRes.ok ? (await qRes.json()).question : null;
+      });
+
+      // 直接批量获取题目（通过 session 的 question_ids）
+      const allQuestionsRes = await fetch(`/api/quiz/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_ids: session.question_ids }),
+      });
+
+      let loadedQuestions: Question[] = [];
+
+      if (allQuestionsRes.ok) {
+        const qData = await allQuestionsRes.json();
+        loadedQuestions = qData.questions || [];
+      } else {
+        // 逐个获取题目作为备用方案
+        for (const qId of session.question_ids) {
+          try {
+            const qRes = await fetch(`/api/quiz/next?question_id=${qId}`);
+            if (qRes.ok) {
+              const qData = await qRes.json();
+              if (qData.question) loadedQuestions.push(qData.question);
+            }
+          } catch {}
+        }
+      }
+
+      if (loadedQuestions.length === 0) {
+        setLoadError('无法加载题目数据');
+        setIsLoadingQuestions(false);
+        return;
+      }
+
+      setQuestions(loadedQuestions);
+      setIsStarted(true);
+    } catch (err: any) {
+      setLoadError(`网络错误: ${err.message || '请检查网络连接'}`);
+    } finally {
+      setIsLoadingQuestions(false);
     }
   }, [mode, selectedDomain]);
 
@@ -200,7 +157,6 @@ function QuizContent() {
 
     setAnswers((prev) => ({ ...prev, [question.id]: answer }));
 
-    // 尝试调用 API
     try {
       const res = await fetch('/api/quiz/submit', {
         method: 'POST',
@@ -217,11 +173,9 @@ function QuizContent() {
         setResults((prev) => ({ ...prev, [question.id]: data }));
         return;
       }
-    } catch {
-      // 本地判断
-    }
+    } catch {}
 
-    // 本地判断
+    // API 失败时本地判断
     const isCorrect = answer.toUpperCase() === question.correct_answer.toUpperCase();
     setResults((prev) => ({
       ...prev,
@@ -255,42 +209,34 @@ function QuizContent() {
         const data = await res.json();
         setAiExplanation(data.explanation);
       } else {
-        // 模拟 AI 解析
+        const errData = await res.json().catch(() => ({}));
         setAiExplanation({
-          deep_analysis:
-            '这道题考查的是信息安全管理的核心理念。CISSP 作为管理导向的认证，强调安全应当服务于业务目标。',
+          deep_analysis: `AI 解析请求失败: ${errData.error || '请检查 OpenAI API Key 配置'}`,
           domain_mapping: {
             domain_id: question.domain,
-            domain_name:
-              CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
-            sub_topic: '安全治理原则',
+            domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
+            sub_topic: '',
           },
-          cbk_reference:
-            'OSG 第9版 第1章 - 安全治理通过安全策略、标准和指南来支持业务目标的实现。',
-          manager_perspective:
-            '作为管理者，信息安全的终极目标不是技术实现，而是保障业务持续运营和战略目标达成。所有安全投入都应可以追溯到业务价值。',
-          key_highlights: question.keywords || ['MOST'],
-          correct_reasoning:
-            '正确答案关注的是业务目标，这符合 CISSP 的管理思维。安全是业务的推动者(enabler)，而非障碍。',
-          wrong_reasoning:
-            '其他选项虽然都是安全的重要方面，但它们都是手段而非目的。合规、基础设施保护和成本控制都服务于更高层的业务目标。',
+          cbk_reference: '',
+          manager_perspective: '',
+          key_highlights: question.keywords || [],
+          correct_reasoning: '',
+          wrong_reasoning: '',
         });
       }
-    } catch {
-      // 模拟数据
+    } catch (err: any) {
       setAiExplanation({
-        deep_analysis: '（AI 服务未配置，此为模拟解析）这道题考查信息安全管理的核心原则。',
+        deep_analysis: `AI 服务连接失败: ${err.message || '请检查网络和 API 配置'}`,
         domain_mapping: {
           domain_id: question.domain,
-          domain_name:
-            CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
-          sub_topic: '安全治理',
+          domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
+          sub_topic: '',
         },
-        cbk_reference: '参考 OSG 第9版相关章节',
-        manager_perspective: '从管理视角来看，安全始终服务于业务目标。',
-        key_highlights: question.keywords || [],
-        correct_reasoning: '正确选项最符合管理层视角。',
-        wrong_reasoning: '其他选项侧重技术层面而非管理层面。',
+        cbk_reference: '',
+        manager_perspective: '',
+        key_highlights: [],
+        correct_reasoning: '',
+        wrong_reasoning: '',
       });
     } finally {
       setIsAiLoading(false);
@@ -325,6 +271,19 @@ function QuizContent() {
             选择模式和知识域，开始你的 CISSP 之旅
           </p>
         </div>
+
+        {/* 错误提示 */}
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-3">
+            <Database size={20} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">{loadError}</p>
+              <p className="text-xs mt-1 opacity-75">
+                请确认：1) 题库已导入 Supabase &nbsp; 2) 环境变量配置正确
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* 模式选择 */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
@@ -406,9 +365,22 @@ function QuizContent() {
         {/* 开始按钮 */}
         <button
           onClick={startQuiz}
-          className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25"
+          disabled={isLoadingQuestions}
+          className={clsx(
+            'w-full py-4 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2',
+            isLoadingQuestions
+              ? 'bg-gray-400 cursor-not-allowed shadow-none'
+              : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
+          )}
         >
-          开始答题 →
+          {isLoadingQuestions ? (
+            <>
+              <Loader2 size={22} className="animate-spin" />
+              加载题目中...
+            </>
+          ) : (
+            '开始答题 →'
+          )}
         </button>
       </div>
     );
@@ -443,6 +415,7 @@ function QuizContent() {
               onClick={() => {
                 setIsStarted(false);
                 setIsCompleted(false);
+                setQuestions([]);
               }}
               className="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
             >
@@ -471,6 +444,7 @@ function QuizContent() {
             onClick={() => {
               setIsStarted(false);
               setIsCompleted(false);
+              setQuestions([]);
             }}
             className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
