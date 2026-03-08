@@ -9,7 +9,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const authUser = await getUserFromRequest(request);
-    const userId = authUser?.sub || null;
+    if (!authUser) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+    const userId = authUser.sub;
 
     const supabase = createServiceClient();
 
@@ -56,19 +59,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 获取用户答题数据（如果有 userId）
+    // 获取用户答题数据
     let progressData: any[] = [];
-    if (userId) {
-      const { data, error } = await supabase
-        .from('user_progress')
-        .select('question_id, is_correct, questions!inner(domain)')
-        .eq('user_id', userId);
+    const { data, error: progressError } = await supabase
+      .from('user_progress')
+      .select('question_id, is_correct, questions!inner(domain)')
+      .eq('user_id', userId);
 
-      if (error) {
-        console.error('Error fetching user progress:', error);
-      } else {
-        progressData = data || [];
-      }
+    if (progressError) {
+      console.error('[Progress] Error fetching user progress:', progressError);
+    } else {
+      progressData = data || [];
     }
 
     const progress = domains.map((d) => {

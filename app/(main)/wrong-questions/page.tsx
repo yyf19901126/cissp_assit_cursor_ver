@@ -35,20 +35,18 @@ export default function WrongQuestionsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (user) fetchWrongQuestions();
-  }, [user]);
+    fetchWrongQuestions();
+  }, []);
 
   async function fetchWrongQuestions() {
     try {
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
-
-      const res = await fetch('/api/quiz/wrong-questions');
+      const res = await fetch('/api/quiz/wrong-questions', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setWrongQuestions(data.questions || []);
+      } else if (res.status === 401) {
+        router.push('/login');
+        return;
       }
     } catch {
       // 网络错误

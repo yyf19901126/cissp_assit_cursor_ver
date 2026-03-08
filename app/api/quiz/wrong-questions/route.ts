@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const authUser = await getUserFromRequest(request);
     if (!authUser) {
-      return NextResponse.json({ questions: [] });
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const userId = authUser.sub;
 

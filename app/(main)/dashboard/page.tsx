@@ -44,12 +44,12 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) fetchProgress();
-  }, [user]);
+    fetchProgress();
+  }, []);
 
   async function fetchProgress() {
     try {
-      const res = await fetch('/api/quiz/progress');
+      const res = await fetch('/api/quiz/progress', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         if (data.domains) {
@@ -58,8 +58,13 @@ export default function DashboardPage() {
         if (data.overall) {
           setOverallStats(data.overall);
         }
+      } else if (res.status === 401) {
+        setError('未登录，请重新登录');
+        router.push('/login');
+        return;
       } else {
-        setError('无法连接数据库，请检查环境变量配置');
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error || '无法连接数据库，请检查环境变量配置');
       }
     } catch (err) {
       setError('网络错误，请稍后重试');

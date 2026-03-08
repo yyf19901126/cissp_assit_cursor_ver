@@ -90,7 +90,7 @@ export default function SettingsPage() {
   const fetchQuestionCount = async () => {
     setIsLoadingCount(true);
     try {
-      const res = await fetch('/api/quiz/progress');
+      const res = await fetch('/api/quiz/progress', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setQuestionCount(data.overall?.total_questions || 0);
@@ -148,6 +148,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/test-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ai_config: finalConfig }),
       });
 
@@ -250,6 +251,7 @@ export default function SettingsPage() {
             const parseRes = await fetch('/api/import/parse', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
               body: JSON.stringify({
                 ai_config: currentAIConfig,
                 raw_questions: batch,
@@ -307,6 +309,7 @@ export default function SettingsPage() {
           const saveRes = await fetch('/api/import/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ questions: batch }),
           });
 
@@ -355,7 +358,7 @@ export default function SettingsPage() {
   const handleClearQuestions = async () => {
     setIsClearing(true);
     try {
-      const res = await fetch('/api/import/clear', { method: 'DELETE' });
+      const res = await fetch('/api/import/clear', { method: 'DELETE', credentials: 'include' });
       if (res.ok) {
         setQuestionCount(0);
         setShowClearConfirm(false);

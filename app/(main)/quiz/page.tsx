@@ -143,6 +143,7 @@ function QuizContent() {
           const res = await fetch('/api/quiz/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
               mode,
               // 顺序模式不需要域筛选，刷整个题库
@@ -186,6 +187,7 @@ function QuizContent() {
         const qRes = await fetch('/api/quiz/questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ question_ids: session.question_ids }),
         });
 
@@ -233,6 +235,7 @@ function QuizContent() {
       const res = await fetch('/api/quiz/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // 确保发送 cookie
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answer,
@@ -240,8 +243,13 @@ function QuizContent() {
         }),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
+        // 检查是否有保存错误警告
+        if (data.save_error) {
+          console.warn('[Quiz] 答案判定成功但保存失败:', data.save_error);
+        }
         setResults((prev) => ({ ...prev, [question.id]: data }));
 
         // 顺序模式：保存进度
@@ -257,7 +265,12 @@ function QuizContent() {
         }
         return;
       }
-    } catch {}
+
+      // API 返回错误
+      console.error('[Quiz] Submit API error:', res.status, data);
+    } catch (err) {
+      console.error('[Quiz] Submit fetch error:', err);
+    }
 
     // API 失败时本地判断
     const isCorrect = answer.toUpperCase() === question.correct_answer.toUpperCase();
@@ -310,6 +323,7 @@ function QuizContent() {
       const res = await fetch('/api/ai/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answers[question.id],
