@@ -69,34 +69,73 @@ export async function POST(request: NextRequest) {
     }
 
     // ═══════════════════ 正常模式：从题库筛选 ═══════════════════
-    // 顺序模式：获取所有题目，不分页
+    // 顺序模式：懒加载，先返回总数和第一批题目
     if (mode === 'sequential') {
-      // 顺序模式：获取所有题目，按题号排序
+      const BATCH_SIZE = 100; // 每批加载100题
+      const startFrom = start_from || 0; // 从哪个题号开始
+
+      // 1. 先获取总数（不加载具体题目，只计数）
+      const { count: totalCount, error: countError } = await supabase
+        .from('questions')
+        .select('*', { count: 'exact', head: true })
+        .order('question_number', { ascending: true });
+
+      if (countError) {
+        console.error('Session count error:', countError);
+        return NextResponse.json({ error: `查询题目总数失败: ${countError.message}` }, { status: 500 });
+      }
+
+      if (!totalCount || totalCount === 0) {
+        return NextResponse.json({ error: '没有可用的题目，请先导入题库' }, { status: 404 });
+      }
+
+      // 2. 获取当前批次（从 startFrom 开始，最多 BATCH_SIZE 题）
       let query = supabase
         .from('questions')
         .select('id, question_number')
         .order('question_number', { ascending: true });
 
-      // 顺序模式不支持域筛选，刷整个题库
-      const { data: allQuestions, error } = await query;
-
-      if (error) {
-        console.error('Session query error:', error);
-        return NextResponse.json({ error: `查询题目失败: ${error.message}` }, { status: 500 });
+      if (startFrom > 0) {
+        query = query.gt('question_number', startFrom);
       }
 
-      if (!allQuestions || allQuestions.length === 0) {
-        return NextResponse.json({ error: '没有可用的题目，请先导入题库' }, { status: 404 });
+      const { data: batchQuestions, error: batchError } = await query.limit(BATCH_SIZE);
+
+      if (batchError) {
+        console.error('Session batch query error:', batchError);
+        return NextResponse.json({ error: `查询题目失败: ${batchError.message}` }, { status: 500 });
       }
 
-      // 顺序模式：返回所有题目
-      const questionIds = allQuestions.map((q: any) => q.id);
-      const grandTotal = allQuestions.length;
+      if (!batchQuestions || batchQuestions.length === 0) {
+        // 没有更多题目了
+        return NextResponse.json({
+          session: {
+            id: crypto.randomUUID(),
+            mode: 'sequential',
+            total_questions: 0,
+            current_index: 0,
+            question_ids: [],
+            answers: {},
+            time_limit: null,
+            start_time: new Date().toISOString(),
+            is_virtual: true,
+          },
+          total_available: totalCount,
+          grand_total: totalCount,
+          has_more: false,
+          batch_start: startFrom,
+          batch_end: startFrom,
+        });
+      }
+
+      const questionIds = batchQuestions.map((q: any) => q.id);
+      const batchEnd = batchQuestions[batchQuestions.length - 1]?.question_number || startFrom;
+      const hasMore = batchQuestions.length === BATCH_SIZE && batchEnd < totalCount;
 
       const virtualSession = {
         id: crypto.randomUUID(),
         mode: 'sequential',
-        total_questions: questionIds.length,
+        total_questions: questionIds.length, // 当前批次的题目数
         current_index: 0,
         question_ids: questionIds,
         answers: {},
@@ -107,9 +146,11 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         session: virtualSession,
-        total_available: grandTotal,
-        grand_total: grandTotal,
-        has_more: false, // 顺序模式不再分页
+        total_available: totalCount, // 题库总题数
+        grand_total: totalCount,     // 题库总题数
+        has_more: hasMore,           // 是否还有更多题目
+        batch_start: startFrom,      // 当前批次起始题号
+        batch_end: batchEnd,         // 当前批次结束题号
       });
     }
 
