@@ -48,7 +48,9 @@ export default function DashboardPage() {
     setError(null);
     setIsLoading(true);
     try {
-      const res = await fetch('/api/quiz/progress', {
+      // 添加时间戳参数强制绕过 Vercel 边缘缓存
+      const timestamp = Date.now();
+      const res = await fetch(`/api/quiz/progress?t=${timestamp}&_=${Math.random()}`, {
         credentials: 'include',
         cache: 'no-store', // 禁用浏览器缓存
         headers: {
