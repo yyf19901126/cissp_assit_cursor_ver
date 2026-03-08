@@ -232,8 +232,27 @@ function QuizContent() {
         setIsLoadingQuestions(false);
       }
     },
-    [mode, selectedDomains, customQuestionCount, sequentialStartFrom, sequentialBatchSize]
+    [mode, selectedDomains, customQuestionCount, sequentialStartFrom, sequentialBatchSize, wrongQuestionsParam, user]
   );
+
+  // ═══════════════════ 错题模式：自动开始 ═══════════════════
+  useEffect(() => {
+    if (wrongQuestionsParam && !isStarted && !isCompleted && !isLoadingQuestions && user) {
+      // 检查 sessionStorage 中是否有错题 ID
+      const stored = sessionStorage.getItem('wrong_question_ids');
+      if (stored) {
+        try {
+          const wrongQuestionIds = JSON.parse(stored);
+          if (wrongQuestionIds && wrongQuestionIds.length > 0) {
+            console.log('[Quiz] Auto-starting wrong questions mode with', wrongQuestionIds.length, 'questions');
+            startQuiz();
+          }
+        } catch (e) {
+          console.error('[Quiz] Failed to parse wrong_question_ids:', e);
+        }
+      }
+    }
+  }, [wrongQuestionsParam, isStarted, isCompleted, isLoadingQuestions, user, startQuiz]);
 
   // ═══════════════════ 提交答案 ═══════════════════
   const handleSubmitAnswer = async (answer: string, questionOverride?: Question) => {
@@ -423,12 +442,28 @@ function QuizContent() {
 
   // ═══════════════════ 未开始：选择界面 ═══════════════════
   if (!isStarted) {
+    // 错题模式：显示加载状态，不显示模式选择
+    if (wrongQuestionsParam && isLoadingQuestions) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="animate-spin text-indigo-500" size={40} />
+            <p className="text-gray-500">正在加载错题...</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">开始答题</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            {wrongQuestionsParam ? '重做错题' : '开始答题'}
+          </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            选择模式和知识域，开始你的 CISSP 之旅
+            {wrongQuestionsParam 
+              ? '正在加载错题，请稍候...'
+              : '选择模式和知识域，开始你的 CISSP 之旅'}
           </p>
         </div>
 
@@ -442,7 +477,8 @@ function QuizContent() {
           </div>
         )}
 
-        {/* 模式选择 */}
+        {/* 模式选择（错题模式下隐藏） */}
+        {!wrongQuestionsParam && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
           <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">选择模式</h3>
           <div className="grid grid-cols-3 gap-3">
@@ -495,9 +531,10 @@ function QuizContent() {
             </button>
           </div>
         </div>
+        )}
 
-        {/* 域选择（仅练习模式显示） */}
-        {mode === 'practice' && (
+        {/* 域选择（仅练习模式显示，错题模式下隐藏） */}
+        {mode === 'practice' && !wrongQuestionsParam && (
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
             <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">
               选择知识域（可多选，不选 = 全部）
@@ -686,7 +723,8 @@ function QuizContent() {
           </div>
         )}
 
-        {/* 开始按钮 */}
+        {/* 开始按钮（错题模式下隐藏，自动开始） */}
+        {!wrongQuestionsParam && (
         <button
           onClick={() => startQuiz(mode === 'sequential' ? sequentialStartFrom : undefined)}
           disabled={isLoadingQuestions}
@@ -712,6 +750,7 @@ function QuizContent() {
             '开始答题 →'
           )}
         </button>
+        )}
       </div>
     );
   }
