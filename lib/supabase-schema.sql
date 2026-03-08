@@ -15,10 +15,10 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. 用户答题记录表
+-- 2. 用户答题记录表（user_id 不绑定 auth.users，支持匿名用户）
 CREATE TABLE IF NOT EXISTS user_progress (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
   question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   user_answer VARCHAR(1) NOT NULL,
   is_correct BOOLEAN NOT NULL,
@@ -27,35 +27,10 @@ CREATE TABLE IF NOT EXISTS user_progress (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. 错题本视图
-CREATE OR REPLACE VIEW wrong_questions AS
-SELECT
-  up.id,
-  up.user_id,
-  up.question_id,
-  up.user_answer,
-  q.question_number,
-  q.domain,
-  q.question_text,
-  q.options,
-  q.correct_answer,
-  q.base_explanation,
-  q.keywords,
-  COUNT(*) AS attempt_count,
-  MAX(up.created_at) AS last_attempt_at,
-  -- 如果最近一次答对了则视为已掌握
-  BOOL_OR(up.is_correct ORDER BY up.created_at DESC) AS is_mastered
-FROM user_progress up
-JOIN questions q ON q.id = up.question_id
-WHERE up.is_correct = FALSE
-GROUP BY up.id, up.user_id, up.question_id, up.user_answer,
-         q.question_number, q.domain, q.question_text, q.options,
-         q.correct_answer, q.base_explanation, q.keywords;
-
--- 4. 考试会话表
+-- 3. 考试会话表（user_id 不绑定 auth.users，支持匿名用户）
 CREATE TABLE IF NOT EXISTS exam_sessions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID,
   mode VARCHAR(10) DEFAULT 'practice' CHECK (mode IN ('practice', 'exam')),
   total_questions INTEGER NOT NULL,
   current_index INTEGER DEFAULT 0,
@@ -74,37 +49,33 @@ CREATE INDEX IF NOT EXISTS idx_user_progress_question ON user_progress(question_
 CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id);
 
 -- RLS (行级安全) 策略
+-- 使用 service_role key 的 API 路由自动绕过 RLS
+-- 以下策略确保安全性：仅允许 service_role 操作
 ALTER TABLE user_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_sessions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own progress" ON user_progress
-  FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own progress" ON user_progress
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can view own sessions" ON exam_sessions
-  FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own sessions" ON exam_sessions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own sessions" ON exam_sessions
-  FOR UPDATE USING (auth.uid() = user_id);
 
 -- questions 表对所有人可读
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Questions are viewable by everyone" ON questions
   FOR SELECT USING (true);
 
+-- user_progress 和 exam_sessions 不需要前端直接访问
+-- 所有操作通过 API 路由（service_role）完成，RLS 启用但无 anon 策略即可阻止前端直连
+
 -- ============================================
--- 迁移脚本：移除外键约束（匿名用户支持）
--- 运行时机：需要使用匿名做题记录功能时执行
+-- 迁移脚本（已有数据库必须执行！）
+-- 在 Supabase SQL Editor 中运行以下 SQL
 -- ============================================
--- 移除 user_progress 和 exam_sessions 的 auth.users 外键约束
--- 这样可以用任意 UUID 作为匿名用户 ID 保存做题记录
+-- 1. 移除外键约束（支持匿名用户 UUID）
 -- ALTER TABLE user_progress DROP CONSTRAINT IF EXISTS user_progress_user_id_fkey;
 -- ALTER TABLE exam_sessions DROP CONSTRAINT IF EXISTS exam_sessions_user_id_fkey;
 --
--- 为 user_progress 添加更宽松的 RLS 策略（允许 service_role 插入/查询任意 user_id）
--- CREATE POLICY "Service role can manage all progress" ON user_progress
---   FOR ALL USING (true) WITH CHECK (true);
--- CREATE POLICY "Service role can manage all sessions" ON exam_sessions
---   FOR ALL USING (true) WITH CHECK (true);
+-- 2. 删除旧的 RLS 策略（如果存在）
+-- DROP POLICY IF EXISTS "Users can view own progress" ON user_progress;
+-- DROP POLICY IF EXISTS "Users can insert own progress" ON user_progress;
+-- DROP POLICY IF EXISTS "Users can view own sessions" ON exam_sessions;
+-- DROP POLICY IF EXISTS "Users can insert own sessions" ON exam_sessions;
+-- DROP POLICY IF EXISTS "Users can update own sessions" ON exam_sessions;
+--
+-- 3. 删除旧的错题本视图（如果存在）
+-- DROP VIEW IF EXISTS wrong_questions;

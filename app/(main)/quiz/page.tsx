@@ -70,6 +70,7 @@ function QuizContent() {
   const [hasMoreQuestions, setHasMoreQuestions] = useState(false);
   const [sequentialGrandTotal, setSequentialGrandTotal] = useState(0);
   const [sequentialStartFrom, setSequentialStartFrom] = useState(0);
+  const [sequentialBatchSize, setSequentialBatchSize] = useState(25);
 
   // ═══════════════════ 计时器 ═══════════════════
   useEffect(() => {
@@ -131,18 +132,19 @@ function QuizContent() {
 
       try {
         const questionCount =
-          mode === 'exam' ? 125 : mode === 'sequential' ? 25 : customQuestionCount;
+          mode === 'exam' ? 125 : mode === 'sequential' ? sequentialBatchSize : customQuestionCount;
 
-        const res = await fetch('/api/quiz/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode,
-            domains: selectedDomains.length > 0 ? selectedDomains : undefined,
-            question_count: questionCount,
-            start_from: mode === 'sequential' ? startFrom : undefined,
-          }),
-        });
+          const res = await fetch('/api/quiz/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode,
+              // 顺序模式不需要域筛选，刷整个题库
+              domains: mode === 'sequential' ? undefined : (selectedDomains.length > 0 ? selectedDomains : undefined),
+              question_count: questionCount,
+              start_from: mode === 'sequential' ? startFrom : undefined,
+            }),
+          });
 
         const data = await res.json();
 
@@ -201,7 +203,7 @@ function QuizContent() {
         setIsLoadingQuestions(false);
       }
     },
-    [mode, selectedDomains, customQuestionCount, sequentialStartFrom]
+    [mode, selectedDomains, customQuestionCount, sequentialStartFrom, sequentialBatchSize]
   );
 
   // ═══════════════════ 提交答案 ═══════════════════
@@ -420,8 +422,8 @@ function QuizContent() {
           </div>
         </div>
 
-        {/* 域选择（考试模式不显示） */}
-        {mode !== 'exam' && (
+        {/* 域选择（仅练习模式显示） */}
+        {mode === 'practice' && (
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
             <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">
               选择知识域（可多选，不选 = 全部）
@@ -509,6 +511,46 @@ function QuizContent() {
                 已选 {selectedDomains.length} 个域，最少 {minQuestionCount} 题
               </p>
             )}
+          </div>
+        )}
+
+        {/* 顺序模式：每批题目数量 */}
+        {mode === 'sequential' && (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">每批题目数量</h3>
+            <div className="flex items-center gap-4">
+              <input
+                type="number"
+                min={5}
+                max={200}
+                value={sequentialBatchSize}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value) || 25;
+                  setSequentialBatchSize(Math.max(5, Math.min(200, val)));
+                }}
+                className="w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-center font-bold text-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+              />
+              <span className="text-sm text-gray-500">题 / 批</span>
+              <div className="flex gap-2 ml-2">
+                {[10, 25, 50, 100].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setSequentialBatchSize(n)}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      sequentialBatchSize === n
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              每完成一批后可继续下一批，进度会自动保存
+            </p>
           </div>
         )}
 
@@ -643,7 +685,7 @@ function QuizContent() {
                 className="px-6 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
               >
                 <ArrowRight size={18} />
-                继续下一批 25 题
+                继续下一批 {sequentialBatchSize} 题
               </button>
             )}
 
