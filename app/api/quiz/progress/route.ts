@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { getUserFromRequest } from '@/lib/auth';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,13 +9,15 @@ export const dynamic = 'force-dynamic';
 // 获取用户各域的掌握进度
 export async function GET(request: NextRequest) {
   try {
-    // ═══════════════════ 缓存控制说明 ═══════════════════
-    // 我们已经有了多层缓存控制：
-    // 1. dynamic = 'force-dynamic' - 禁用 Next.js 缓存
-    // 2. 完整的 Cache-Control 响应头 - 禁用浏览器和 CDN 缓存
-    // 3. URL 时间戳参数 - 绕过边缘缓存
-    // 4. vercel.json 全局配置 - Vercel 配置层禁用缓存
-    // 如果仍有 Runtime Cache 问题，需要在 Vercel Dashboard 中手动清除
+    // ═══════════════════ 禁用 Runtime Cache ═══════════════════
+    // 使用 Next.js 的 revalidate API 来禁用 Runtime Cache
+    // 这会确保每次请求都获取最新数据，而不是使用缓存的函数执行结果
+    try {
+      revalidatePath('/api/quiz/progress');
+      revalidateTag('progress');
+    } catch (e) {
+      // revalidate 在某些环境下可能不可用，忽略错误
+    }
 
     const authUser = await getUserFromRequest(request);
     if (!authUser) {
