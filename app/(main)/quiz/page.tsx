@@ -71,12 +71,13 @@ function QuizContent() {
   const [sequentialProgress, setSequentialProgressState] = useState<SequentialProgress | null>(null);
   const [sequentialGrandTotal, setSequentialGrandTotal] = useState(0);
   const [isLoadingProgress, setIsLoadingProgress] = useState(false);
-  const [sequentialBatchInfo, setSequentialBatchInfo] = useState<{
-    batchStart: number;
-    batchEnd: number;
-    hasMore: boolean;
-  } | null>(null);
-  const [isLoadingNextBatch, setIsLoadingNextBatch] = useState(false);
+  const [sequentialCurrentQuestionNumber, setSequentialCurrentQuestionNumber] = useState<number>(1); // 当前题号（1-based）
+  const [sequentialQuestionMap, setSequentialQuestionMap] = useState<Map<number, Question>>(new Map()); // 题号到题目的映射
+  const [sequentialLoadedNumbers, setSequentialLoadedNumbers] = useState<Set<number>>(new Set()); // 已加载的题号
+  const [sequentialAnsweredNumbers, setSequentialAnsweredNumbers] = useState<Set<number>>(new Set()); // 已答题的题号
+  const [sequentialCorrectNumbers, setSequentialCorrectNumbers] = useState<Set<number>>(new Set()); // 答对的题号
+  const [sequentialWrongNumbers, setSequentialWrongNumbers] = useState<Set<number>>(new Set()); // 答错的题号
+  const [isLoadingQuestionByNumber, setIsLoadingQuestionByNumber] = useState(false);
 
   // 加载顺序刷题进度（从数据库）
   useEffect(() => {
@@ -213,55 +214,97 @@ function QuizContent() {
           return;
         }
 
-        // 保存顺序模式元数据
+        // 顺序模式：特殊处理
         if (mode === 'sequential') {
           setSequentialGrandTotal(data.grand_total);
-          setSequentialBatchInfo({
-            batchStart: data.batch_start || 0,
-            batchEnd: data.batch_end || 0,
-            hasMore: data.has_more || false,
+          
+          // 批量获取题目详情
+          const qRes = await fetch('/api/quiz/questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ question_ids: session.question_ids }),
           });
-        }
 
-        // 批量获取题目详情
-        const qRes = await fetch('/api/quiz/questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ question_ids: session.question_ids }),
-        });
+          let loadedQuestions: Question[] = [];
+          if (qRes.ok) {
+            const qData = await qRes.json();
+            loadedQuestions = qData.questions || [];
+          }
 
-        let loadedQuestions: Question[] = [];
-        if (qRes.ok) {
-          const qData = await qRes.json();
-          loadedQuestions = qData.questions || [];
-        }
+          if (loadedQuestions.length === 0) {
+            setLoadError('无法加载题目数据');
+            setIsLoadingQuestions(false);
+            return;
+          }
 
-        if (loadedQuestions.length === 0) {
-          setLoadError('无法加载题目数据');
-          setIsLoadingQuestions(false);
-          return;
-        }
+          // 构建题号到题目的映射
+          const questionMap = new Map<number, Question>();
+          const loadedNumbers = new Set<number>();
+          loadedQuestions.forEach((q) => {
+            questionMap.set(q.question_number, q);
+            loadedNumbers.add(q.question_number);
+          });
+          setSequentialQuestionMap(questionMap);
+          setSequentialLoadedNumbers(loadedNumbers);
 
-        setQuestions(loadedQuestions);
+          // 获取已答题状态（从user_progress）
+          try {
+            const statusRes = await fetch('/api/quiz/sequential-answered-status', {
+              credentials: 'include',
+              cache: 'no-store',
+            });
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              setSequentialAnsweredNumbers(new Set(Object.keys(statusData.answered || {}).map(Number)));
+              setSequentialCorrectNumbers(new Set(statusData.correct || []));
+              setSequentialWrongNumbers(new Set(statusData.wrong || []));
+            }
+          } catch (err) {
+            console.error('Failed to load answered status:', err);
+          }
 
-        // 顺序模式：如果有进度，从上次完成的题号之后开始
-        if (mode === 'sequential' && sequentialProgress && sequentialProgress.lastQuestionNumber > 0) {
-          // 找到上次完成的题目在列表中的位置
-          const lastQuestionIndex = loadedQuestions.findIndex(
-            (q) => q.question_number === sequentialProgress.lastQuestionNumber
-          );
-          if (lastQuestionIndex >= 0 && lastQuestionIndex < loadedQuestions.length - 1) {
-            // 从下一题开始
-            setCurrentIndex(lastQuestionIndex + 1);
-          } else if (lastQuestionIndex === loadedQuestions.length - 1) {
-            // 如果正好是最后一道题，从下一题开始（需要加载下一批）
-            setCurrentIndex(lastQuestionIndex + 1);
+          // 设置当前题号
+          if (sequentialProgress && sequentialProgress.lastQuestionNumber > 0) {
+            setSequentialCurrentQuestionNumber(sequentialProgress.lastQuestionNumber + 1);
           } else {
-            // 如果不在当前批次中，从头开始（这种情况应该很少，因为 start_from 已经处理了）
+            setSequentialCurrentQuestionNumber(1);
+          }
+
+          // 设置当前题目（如果已加载）
+          const currentQNum = sequentialProgress && sequentialProgress.lastQuestionNumber > 0
+            ? sequentialProgress.lastQuestionNumber + 1
+            : 1;
+          const currentQuestion = questionMap.get(currentQNum);
+          if (currentQuestion) {
+            setQuestions([currentQuestion]);
             setCurrentIndex(0);
+          } else {
+            // 如果当前题号未加载，需要加载
+            await loadQuestionByNumber(currentQNum);
           }
         } else {
+          // 非顺序模式：正常处理
+          const qRes = await fetch('/api/quiz/questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ question_ids: session.question_ids }),
+          });
+
+          let loadedQuestions: Question[] = [];
+          if (qRes.ok) {
+            const qData = await qRes.json();
+            loadedQuestions = qData.questions || [];
+          }
+
+          if (loadedQuestions.length === 0) {
+            setLoadError('无法加载题目数据');
+            setIsLoadingQuestions(false);
+            return;
+          }
+
+          setQuestions(loadedQuestions);
           setCurrentIndex(0);
         }
 
@@ -332,14 +375,33 @@ function QuizContent() {
         }
         setResults((prev) => ({ ...prev, [question.id]: data }));
 
-        // 顺序模式：保存进度到数据库
+        // 顺序模式：保存进度到数据库并更新状态
         if (mode === 'sequential' && sequentialGrandTotal > 0) {
-          // 计算已答题数：当前题号（因为顺序刷题是按题号顺序的）
-          const answeredCount = question.question_number;
+          const questionNumber = question.question_number;
+          
+          // 更新已答题状态
+          setSequentialAnsweredNumbers((prev) => new Set(prev).add(questionNumber));
+          if (data.is_correct) {
+            setSequentialCorrectNumbers((prev) => new Set(prev).add(questionNumber));
+            setSequentialWrongNumbers((prev) => {
+              const next = new Set(prev);
+              next.delete(questionNumber);
+              return next;
+            });
+          } else {
+            setSequentialWrongNumbers((prev) => new Set(prev).add(questionNumber));
+            setSequentialCorrectNumbers((prev) => {
+              const next = new Set(prev);
+              next.delete(questionNumber);
+              return next;
+            });
+          }
+
+          // 保存进度
           const newProgress: SequentialProgress = {
-            lastQuestionNumber: question.question_number,
+            lastQuestionNumber: questionNumber,
             totalQuestions: sequentialGrandTotal,
-            answeredCount: answeredCount,
+            answeredCount: questionNumber, // 已答题数 = 当前题号（因为是顺序的）
             timestamp: new Date().toISOString(),
           };
           await saveSequentialProgress(newProgress);
@@ -451,76 +513,77 @@ function QuizContent() {
     }
   };
 
-  // ═══════════════════ 顺序模式：懒加载下一批题目 ═══════════════════
-  const loadNextBatch = useCallback(async () => {
-    if (mode !== 'sequential' || !sequentialBatchInfo?.hasMore || isLoadingNextBatch || !isStarted) {
+  // ═══════════════════ 顺序模式：按题号加载题目（按需加载） ═══════════════════
+  const loadQuestionByNumber = useCallback(async (questionNumber: number) => {
+    if (questionNumber < 1 || questionNumber > sequentialGrandTotal) {
       return;
     }
 
-    if (questions.length === 0) return;
-
-    // 当用户做到当前批次的80%时，开始加载下一批（提前加载，确保无感）
-    const threshold = Math.floor(questions.length * 0.8);
-    if (currentIndex < threshold) {
-      return; // 还没到阈值，不需要加载
+    // 如果已经加载，直接返回
+    if (sequentialLoadedNumbers.has(questionNumber)) {
+      const question = sequentialQuestionMap.get(questionNumber);
+      if (question) {
+        setQuestions([question]);
+        setCurrentIndex(0);
+      }
+      return;
     }
 
-    setIsLoadingNextBatch(true);
+    setIsLoadingQuestionByNumber(true);
     try {
-      const res = await fetch('/api/quiz/sequential-next-batch', {
+      const res = await fetch('/api/quiz/sequential-load-by-number', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          start_from: sequentialBatchInfo.batchEnd,
-        }),
+        body: JSON.stringify({ question_number: questionNumber }),
       });
 
       if (res.ok) {
         const data = await res.json();
         if (data.questions && data.questions.length > 0) {
-          // 追加新题目到现有列表
-          setQuestions((prev) => {
-            const newQuestions = [...prev, ...data.questions];
-            console.log(`[Quiz] 懒加载完成：已加载 ${data.questions.length} 题，当前共 ${newQuestions.length} 题`);
-            return newQuestions;
+          // 更新题号映射
+          const newMap = new Map(sequentialQuestionMap);
+          const newLoaded = new Set(sequentialLoadedNumbers);
+          data.questions.forEach((q: Question) => {
+            newMap.set(q.question_number, q);
+            newLoaded.add(q.question_number);
           });
-          setSequentialBatchInfo((prev) => {
-            if (!prev) return null;
-            return {
-              batchStart: prev.batchEnd,
-              batchEnd: data.batch_end || prev.batchEnd,
-              hasMore: data.has_more || false,
-            };
-          });
-        } else {
-          // 没有更多题目了
-          setSequentialBatchInfo((prev) => {
-            if (!prev) return null;
-            return { ...prev, hasMore: false };
-          });
+          setSequentialQuestionMap(newMap);
+          setSequentialLoadedNumbers(newLoaded);
+
+          // 设置当前题目
+          const targetQuestion = newMap.get(questionNumber);
+          if (targetQuestion) {
+            setQuestions([targetQuestion]);
+            setCurrentIndex(0);
+          }
         }
       }
     } catch (err) {
-      console.error('[Quiz] 懒加载失败:', err);
+      console.error('[Quiz] Load question by number failed:', err);
     } finally {
-      setIsLoadingNextBatch(false);
+      setIsLoadingQuestionByNumber(false);
     }
-  }, [mode, sequentialBatchInfo, isLoadingNextBatch, isStarted, currentIndex, questions.length]);
+  }, [sequentialGrandTotal, sequentialLoadedNumbers, sequentialQuestionMap]);
 
-  // 监听当前题目索引，触发懒加载
-  useEffect(() => {
-    if (mode === 'sequential' && isStarted && questions.length > 0 && sequentialBatchInfo?.hasMore) {
-      loadNextBatch();
-    }
-  }, [currentIndex, mode, isStarted, sequentialBatchInfo?.hasMore, loadNextBatch]);
 
-  const goToQuestion = (index: number) => {
-    if (index >= 0 && index < questions.length) {
-      // 导航前自动提交当前题目的未提交答案
-      flushPendingAnswer();
-      setCurrentIndex(index);
-      setAiExplanation(null);
+  const goToQuestion = (target: number) => {
+    if (mode === 'sequential') {
+      // 顺序模式：target是题号（1-based）
+      const targetQuestionNumber = target;
+      if (targetQuestionNumber >= 1 && targetQuestionNumber <= sequentialGrandTotal) {
+        flushPendingAnswer();
+        setSequentialCurrentQuestionNumber(targetQuestionNumber);
+        loadQuestionByNumber(targetQuestionNumber);
+        setAiExplanation(null);
+      }
+    } else {
+      // 非顺序模式：target是数组索引（0-based）
+      if (target >= 0 && target < questions.length) {
+        flushPendingAnswer();
+        setCurrentIndex(target);
+        setAiExplanation(null);
+      }
     }
   };
 
@@ -885,7 +948,9 @@ function QuizContent() {
   }
 
   // ═══════════════════ 答题中 ═══════════════════
-  const currentQuestion = questions[currentIndex];
+  const currentQuestion = mode === 'sequential'
+    ? sequentialQuestionMap.get(sequentialCurrentQuestionNumber) || questions[0]
+    : questions[currentIndex];
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -910,9 +975,9 @@ function QuizContent() {
               ? '顺序刷题'
               : '练习模式'}
           </h1>
-          {mode === 'sequential' && currentQuestion && (
+          {mode === 'sequential' && (
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              第 {currentQuestion.question_number} 题
+              第 {sequentialCurrentQuestionNumber} 题 / 共 {sequentialGrandTotal} 题
             </span>
           )}
         </div>
@@ -935,11 +1000,20 @@ function QuizContent() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 主内容区 */}
         <div className="lg:col-span-2 space-y-6">
-          {/* 顺序模式：懒加载提示 */}
-          {mode === 'sequential' && isLoadingNextBatch && (
+          {/* 顺序模式：加载提示 */}
+          {mode === 'sequential' && isLoadingQuestionByNumber && (
             <div className="mb-4 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm flex items-center gap-2">
               <Loader2 size={16} className="animate-spin" />
-              正在加载下一批题目...
+              正在加载题目...
+            </div>
+          )}
+
+          {mode === 'sequential' && isLoadingQuestionByNumber && !currentQuestion && (
+            <div className="flex items-center justify-center h-96">
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="animate-spin text-indigo-500" size={40} />
+                <p className="text-gray-500">正在加载第 {sequentialCurrentQuestionNumber} 题...</p>
+              </div>
             </div>
           )}
 
@@ -947,7 +1021,7 @@ function QuizContent() {
             <QuestionCard
               key={currentQuestion.id}
               question={currentQuestion}
-              questionIndex={currentIndex}
+              questionIndex={mode === 'sequential' ? sequentialCurrentQuestionNumber - 1 : currentIndex}
               totalQuestions={mode === 'sequential' ? sequentialGrandTotal : questions.length}
               mode={mode === 'sequential' ? 'practice' : mode}
               onSubmit={handleSubmitAnswer}
@@ -967,11 +1041,17 @@ function QuizContent() {
           {/* 上一题 / 下一题 */}
           <div className="flex items-center justify-between">
             <button
-              onClick={() => goToQuestion(currentIndex - 1)}
-              disabled={currentIndex === 0}
+              onClick={() => {
+                if (mode === 'sequential') {
+                  goToQuestion(sequentialCurrentQuestionNumber - 1);
+                } else {
+                  goToQuestion(currentIndex - 1);
+                }
+              }}
+              disabled={mode === 'sequential' ? sequentialCurrentQuestionNumber <= 1 : currentIndex === 0}
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors',
-                currentIndex === 0
+                (mode === 'sequential' ? sequentialCurrentQuestionNumber <= 1 : currentIndex === 0)
                   ? 'text-gray-300 cursor-not-allowed'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
               )}
@@ -979,30 +1059,37 @@ function QuizContent() {
               <ChevronLeft size={18} /> 上一题
             </button>
 
-            {currentIndex === questions.length - 1 ? (
-              // 顺序模式：如果还有更多题目，显示加载提示；否则显示完成按钮
-              mode === 'sequential' && sequentialBatchInfo?.hasMore ? (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm">
-                  {isLoadingNextBatch ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      正在加载下一批题目...
-                    </>
-                  ) : (
-                    '已到当前批次末尾，正在加载下一批...'
-                  )}
-                </div>
-              ) : (
+            {mode === 'sequential' ? (
+              // 顺序模式：基于题号
+              sequentialCurrentQuestionNumber >= sequentialGrandTotal ? (
                 <button
                   onClick={() => {
-                    flushPendingAnswer(); // 提交最后一题的答案
+                    flushPendingAnswer();
                     setIsCompleted(true);
                   }}
                   className="flex items-center gap-2 px-6 py-2 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
                 >
                   完成 <Trophy size={18} />
                 </button>
+              ) : (
+                <button
+                  onClick={() => goToQuestion(sequentialCurrentQuestionNumber)}
+                  disabled={isLoadingQuestionByNumber}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium transition-colors disabled:opacity-50"
+                >
+                  下一题 <ChevronRight size={18} />
+                </button>
               )
+            ) : currentIndex === questions.length - 1 ? (
+              <button
+                onClick={() => {
+                  flushPendingAnswer();
+                  setIsCompleted(true);
+                }}
+                className="flex items-center gap-2 px-6 py-2 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
+              >
+                完成 <Trophy size={18} />
+              </button>
             ) : (
               <button
                 onClick={() => goToQuestion(currentIndex + 1)}
@@ -1017,12 +1104,38 @@ function QuizContent() {
         {/* 右侧面板 */}
         <div className="space-y-6">
           <NavigationMatrix
-            totalQuestions={questions.length}
-            currentIndex={currentIndex}
-            answers={answers}
-            questionIds={questions.map((q) => q.id)}
+            totalQuestions={mode === 'sequential' ? sequentialGrandTotal : questions.length}
+            currentIndex={mode === 'sequential' ? sequentialCurrentQuestionNumber - 1 : currentIndex}
+            answers={
+              mode === 'sequential'
+                ? Object.fromEntries(
+                    Array.from(sequentialAnsweredNumbers).map((qNum) => {
+                      const question = sequentialQuestionMap.get(qNum);
+                      return question ? [question.id, 'answered'] : [`placeholder-${qNum}`, 'answered'];
+                    })
+                  )
+                : answers
+            }
+            questionIds={
+              mode === 'sequential'
+                ? Array.from({ length: sequentialGrandTotal }, (_, i) => {
+                    const qNum = i + 1;
+                    const question = sequentialQuestionMap.get(qNum);
+                    return question?.id || `placeholder-${qNum}`;
+                  })
+                : questions.map((q) => q.id)
+            }
             results={
-              mode !== 'exam'
+              mode === 'sequential'
+                ? Object.fromEntries(
+                    Array.from(sequentialAnsweredNumbers).map((qNum) => {
+                      const question = sequentialQuestionMap.get(qNum);
+                      if (!question) return [`placeholder-${qNum}`, false];
+                      const isCorrect = sequentialCorrectNumbers.has(qNum);
+                      return [question.id, isCorrect];
+                    })
+                  )
+                : mode !== 'exam'
                 ? Object.fromEntries(
                     Object.entries(results).map(([id, r]) => [id, r.is_correct])
                   )
