@@ -77,3 +77,23 @@ export function maskApiKey(key: string): string {
   if (!key || key.length < 8) return '****';
   return key.substring(0, 4) + '****' + key.substring(key.length - 4);
 }
+
+/** 从服务端获取用户专属 AI 配置（用于已登录用户） */
+export async function getAIConfigFromUser(userId: string): Promise<AIConfig> {
+  try {
+    const res = await fetch('/api/auth/settings');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.config) {
+        return {
+          api_key: data.config.api_key || '',
+          base_url: data.config.base_url || DEFAULT_AI_CONFIG.base_url,
+          model: data.config.model || DEFAULT_AI_CONFIG.model,
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch user AI config:', err);
+  }
+  return DEFAULT_AI_CONFIG;
+}

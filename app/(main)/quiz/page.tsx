@@ -8,13 +8,12 @@ import AIExplanationPanel from '@/components/AIExplanation';
 import TermLookup from '@/components/TermLookup';
 import { Question, AIExplanation } from '@/types/database';
 import { CISSP_DOMAINS } from '@/types/database';
-import { getAIConfig } from '@/lib/ai-config';
+import { useAuth } from '@/contexts/AuthContext';
 import {
-  getAnonymousUserId,
   getSequentialProgress,
   saveSequentialProgress,
   clearSequentialProgress,
-} from '@/lib/anonymous-user';
+} from '@/lib/sequential-progress';
 import {
   Timer,
   ChevronLeft,
@@ -37,6 +36,7 @@ type QuizMode = 'practice' | 'exam' | 'sequential';
 function QuizContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user, aiSettings } = useAuth();
 
   const modeParam = searchParams.get('mode') || 'practice';
   const domainParam = searchParams.get('domain');
@@ -66,7 +66,9 @@ function QuizContent() {
   const [customQuestionCount, setCustomQuestionCount] = useState(25);
 
   // 顺序模式
-  const [sequentialProgress, setSequentialProgressState] = useState(getSequentialProgress());
+  const [sequentialProgress, setSequentialProgressState] = useState(
+    user ? getSequentialProgress(user.id) : null
+  );
   const [hasMoreQuestions, setHasMoreQuestions] = useState(false);
   const [sequentialGrandTotal, setSequentialGrandTotal] = useState(0);
   const [sequentialStartFrom, setSequentialStartFrom] = useState(0);
@@ -150,7 +152,7 @@ function QuizContent() {
 
         // 顺序模式无更多题目
         if (data.error === 'no_more_questions') {
-          clearSequentialProgress();
+          if (user) clearSequentialProgress(user.id);
           setSequentialProgressState(null);
           setLoadError('🎉 恭喜！所有题目已完成，进度已重置。');
           setIsLoadingQuestions(false);
@@ -213,9 +215,6 @@ function QuizContent() {
 
     setAnswers((prev) => ({ ...prev, [question.id]: answer }));
 
-    // 获取匿名用户 ID
-    const userId = getAnonymousUserId();
-
     try {
       const res = await fetch('/api/quiz/submit', {
         method: 'POST',
@@ -223,7 +222,6 @@ function QuizContent() {
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answer,
-          user_id: userId,
           mode: mode === 'sequential' ? 'practice' : mode,
         }),
       });
@@ -233,15 +231,15 @@ function QuizContent() {
         setResults((prev) => ({ ...prev, [question.id]: data }));
 
         // 顺序模式：保存进度
-        if (mode === 'sequential') {
-          const progress = getSequentialProgress();
-          saveSequentialProgress({
+        if (mode === 'sequential' && user) {
+          const progress = getSequentialProgress(user.id);
+          saveSequentialProgress(user.id, {
             lastQuestionNumber: question.question_number,
             totalQuestions: sequentialGrandTotal,
             answeredCount: (progress?.answeredCount || 0) + 1,
             timestamp: new Date().toISOString(),
           });
-          setSequentialProgressState(getSequentialProgress());
+          setSequentialProgressState(getSequentialProgress(user.id));
         }
         return;
       }
@@ -269,14 +267,18 @@ function QuizContent() {
     setAiExplanation(null);
 
     try {
-      const aiConfig = getAIConfig();
+      const aiConfig = aiSettings.api_key ? {
+        api_key: aiSettings.api_key,
+        base_url: aiSettings.base_url,
+        model: aiSettings.model,
+      } : undefined;
       const res = await fetch('/api/ai/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answers[question.id],
-          ai_config: aiConfig.api_key ? aiConfig : undefined,
+          ai_config: aiConfig,
         }),
       });
 
@@ -599,7 +601,7 @@ function QuizContent() {
               </button>
               <button
                 onClick={() => {
-                  clearSequentialProgress();
+                  if (user) clearSequentialProgress(user.id);
                   setSequentialProgressState(null);
                   setSequentialStartFrom(0);
                 }}

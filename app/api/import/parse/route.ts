@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIClient, getModelName, DynamicAIConfig } from '@/lib/openai';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/import/parse
-// 使用 AI 将原始题目文本解析为结构化 JSON
-// Body: {
-//   ai_config: { api_key, base_url, model },
-//   raw_questions: [{ index, rawText }],   // 有识别结果时
-//   raw_text: string,                      // 无法识别格式时，传入原文
-//   batch_index: number
-// }
+// 使用 AI 将原始题目文本解析为结构化 JSON（仅管理员）
 export async function POST(request: NextRequest) {
   try {
+    const authUser = await getUserFromRequest(request);
+    if (!authUser || authUser.role !== 'admin') {
+      return NextResponse.json({ error: '仅管理员可导入题库' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { ai_config, raw_questions, raw_text, batch_index = 0 } = body;
 

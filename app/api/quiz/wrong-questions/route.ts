@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/quiz/wrong-questions?user_id=xxx
-// 获取用户的错题列表
+// GET /api/quiz/wrong-questions
+// 获取当前用户的错题列表
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('user_id');
-
-    if (!userId) {
+    const authUser = await getUserFromRequest(request);
+    if (!authUser) {
       return NextResponse.json({ questions: [] });
     }
+    const userId = authUser.sub;
 
     const supabase = createServiceClient();
 

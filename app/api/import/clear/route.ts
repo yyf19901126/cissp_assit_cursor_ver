@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 // DELETE /api/import/clear
-// 清空题库
+// 清空题库（仅管理员）
 export async function DELETE(request: NextRequest) {
   try {
+    const user = await getUserFromRequest(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: '仅管理员可清空题库' }, { status: 403 });
+    }
+
     const supabase = createServiceClient();
 
     // 先获取题目数量

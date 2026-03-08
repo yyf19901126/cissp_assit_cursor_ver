@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/import/save
-// 将解析后的题目批量保存到 Supabase
-// Body: { questions: [...] }
+// 将解析后的题目批量保存到 Supabase（仅管理员）
 export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromRequest(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: '仅管理员可导入题库' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { questions } = body;
 

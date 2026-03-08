@@ -17,7 +17,7 @@ import {
   ListOrdered,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { getAnonymousUserId } from '@/lib/anonymous-user';
+import { useAuth } from '@/contexts/AuthContext';
 
 // 初始空数据
 const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
@@ -32,6 +32,7 @@ const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [domainProgress, setDomainProgress] = useState<DomainProgress[]>(emptyDomainProgress);
   const [overallStats, setOverallStats] = useState({
     total_questions: 0,
@@ -43,13 +44,12 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProgress();
-  }, []);
+    if (user) fetchProgress();
+  }, [user]);
 
   async function fetchProgress() {
     try {
-      const userId = getAnonymousUserId();
-      const res = await fetch(`/api/quiz/progress?user_id=${userId}`);
+      const res = await fetch('/api/quiz/progress');
       if (res.ok) {
         const data = await res.json();
         if (data.domains) {

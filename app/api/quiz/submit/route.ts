@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,8 +8,13 @@ export const dynamic = 'force-dynamic';
 // 提交答案 — 始终记录做题进度
 export async function POST(request: NextRequest) {
   try {
+    const authUser = await getUserFromRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
     const body = await request.json();
-    const { user_id, question_id, user_answer, time_spent, mode } = body;
+    const { question_id, user_answer, time_spent, mode } = body;
 
     if (!question_id || !user_answer) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
@@ -29,25 +35,22 @@ export async function POST(request: NextRequest) {
 
     const isCorrect = user_answer.toUpperCase() === question.correct_answer.toUpperCase();
 
-    // 始终记录做题进度（需要 user_id）
-    if (user_id) {
-      try {
-        const { error: insertError } = await supabase.from('user_progress').insert({
-          user_id,
-          question_id,
-          user_answer: user_answer.toUpperCase(),
-          is_correct: isCorrect,
-          time_spent: time_spent || 0,
-          mode: mode || 'practice',
-        });
+    // 记录做题进度
+    try {
+      const { error: insertError } = await supabase.from('user_progress').insert({
+        user_id: authUser.sub,
+        question_id,
+        user_answer: user_answer.toUpperCase(),
+        is_correct: isCorrect,
+        time_spent: time_spent || 0,
+        mode: mode || 'practice',
+      });
 
-        if (insertError) {
-          console.error('Progress insert error:', insertError);
-          // 不影响答题结果返回
-        }
-      } catch (err) {
-        console.error('Progress insert exception:', err);
+      if (insertError) {
+        console.error('Progress insert error:', insertError);
       }
+    } catch (err) {
+      console.error('Progress insert exception:', err);
     }
 
     return NextResponse.json({

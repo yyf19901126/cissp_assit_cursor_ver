@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Settings,
   Brain,
-  Key,
   Save,
   CheckCircle,
   XCircle,
@@ -16,19 +15,11 @@ import {
   Zap,
   Database,
   RefreshCw,
+  ShieldAlert,
 } from 'lucide-react';
 import clsx from 'clsx';
-import {
-  AIConfig,
-  DEFAULT_AI_CONFIG,
-  MODEL_PRESETS,
-  getAIConfig,
-  saveAIConfig,
-  isAIVerified,
-  setAIVerified,
-  clearAIVerified,
-  isAIConfigComplete,
-} from '@/lib/ai-config';
+import { useAuth } from '@/contexts/AuthContext';
+import { MODEL_PRESETS } from '@/lib/ai-config';
 import { extractQuestionsFromPDF } from '@/lib/pdf-client-parser';
 
 interface ImportProgress {
@@ -43,11 +34,16 @@ interface ImportProgress {
 }
 
 export default function SettingsPage() {
-  // AI 配置
-  const [aiConfig, setAiConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
+  const { user, aiSettings, updateAISettings, isAdmin } = useAuth();
+
+  // AI 配置（本地编辑状态）
+  const [editConfig, setEditConfig] = useState({
+    api_key: '',
+    base_url: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+  });
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModel, setCustomModel] = useState('');
-  const [aiVerified, setAiVerifiedState] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -74,21 +70,22 @@ export default function SettingsPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
-  // 初始化
+  // 从 AuthContext 加载 AI 配置
   useEffect(() => {
-    const config = getAIConfig();
-    setAiConfig(config);
-    setAiVerifiedState(isAIVerified());
-
+    setEditConfig({
+      api_key: aiSettings.api_key,
+      base_url: aiSettings.base_url,
+      model: aiSettings.model,
+    });
     // 检查是否是自定义模型
-    const isPreset = MODEL_PRESETS.some((p) => p.value === config.model);
-    if (!isPreset && config.model) {
+    const isPreset = MODEL_PRESETS.some((p) => p.value === aiSettings.model);
+    if (!isPreset && aiSettings.model) {
       setIsCustomModel(true);
-      setCustomModel(config.model);
+      setCustomModel(aiSettings.model);
     }
 
     fetchQuestionCount();
-  }, []);
+  }, [aiSettings]);
 
   const fetchQuestionCount = async () => {
     setIsLoadingCount(true);
@@ -106,10 +103,8 @@ export default function SettingsPage() {
   };
 
   // AI 配置变更
-  const handleConfigChange = (field: keyof AIConfig, value: string) => {
-    setAiConfig((prev) => ({ ...prev, [field]: value }));
-    clearAIVerified();
-    setAiVerifiedState(false);
+  const handleConfigChange = (field: string, value: string) => {
+    setEditConfig((prev) => ({ ...prev, [field]: value }));
     setTestResult(null);
   };
 
@@ -123,15 +118,19 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveConfig = () => {
+  const handleSaveConfig = async () => {
     const finalConfig = {
-      ...aiConfig,
-      model: isCustomModel ? customModel : aiConfig.model,
+      api_key: editConfig.api_key,
+      base_url: editConfig.base_url,
+      model: isCustomModel ? customModel : editConfig.model,
+      verified: false, // 修改后需要重新验证
     };
-    saveAIConfig(finalConfig);
-    setAiConfig(finalConfig);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+
+    const result = await updateAISettings(finalConfig);
+    if (!result.error) {
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    }
   };
 
   // 测试 AI 连接
@@ -140,8 +139,9 @@ export default function SettingsPage() {
     setTestResult(null);
 
     const finalConfig = {
-      ...aiConfig,
-      model: isCustomModel ? customModel : aiConfig.model,
+      api_key: editConfig.api_key,
+      base_url: editConfig.base_url,
+      model: isCustomModel ? customModel : editConfig.model,
     };
 
     try {
@@ -155,15 +155,13 @@ export default function SettingsPage() {
 
       if (data.success) {
         setTestResult({ success: true, message: data.message });
-        setAIVerified(true);
-        setAiVerifiedState(true);
-        // 测试成功同时保存配置
-        saveAIConfig(finalConfig);
-        setAiConfig(finalConfig);
+        // 测试成功同时保存配置（标记为已验证）
+        await updateAISettings({
+          ...finalConfig,
+          verified: true,
+        });
       } else {
         setTestResult({ success: false, message: data.error || '测试失败' });
-        setAIVerified(false);
-        setAiVerifiedState(false);
       }
     } catch (err: any) {
       setTestResult({
@@ -184,7 +182,6 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 重置进度
     setImportProgress({
       status: 'uploading',
       message: `正在解析 ${file.name}...`,
@@ -197,13 +194,9 @@ export default function SettingsPage() {
     });
 
     try {
-      // ========== Step 1: 客户端 PDF 文本提取 ==========
-      // 使用 pdfjs-dist 在浏览器内解析 PDF，不上传到服务器，规避大小限制
+      // Step 1: 客户端 PDF 文本提取
       const extractResult = await extractQuestionsFromPDF(file, (msg) => {
-        setImportProgress((prev) => ({
-          ...prev,
-          message: msg,
-        }));
+        setImportProgress((prev) => ({ ...prev, message: msg }));
       });
 
       const { locallyParsed, unparsedQuestions, rawQuestions } = extractResult;
@@ -212,7 +205,7 @@ export default function SettingsPage() {
         throw new Error('PDF 中未找到任何题目，请确认 PDF 包含 CISSP 考试题目');
       }
 
-      // ========== Step 2: 合并本地解析和 AI 解析结果 ==========
+      // Step 2: AI 辅助解析
       let allParsedQuestions: any[] = [...locallyParsed];
       const errors: string[] = [];
 
@@ -226,7 +219,6 @@ export default function SettingsPage() {
           : `准备 AI 解析 ${unparsedQuestions.length} 道题目...`,
       }));
 
-      // 如果有无法本地解析的题目，使用 AI 辅助解析
       if (unparsedQuestions.length > 0) {
         const BATCH_SIZE = 15;
         const totalBatches = Math.ceil(unparsedQuestions.length / BATCH_SIZE);
@@ -236,6 +228,13 @@ export default function SettingsPage() {
           totalBatches,
           message: `AI 正在解析剩余 ${unparsedQuestions.length} 题 (${totalBatches} 批)...`,
         }));
+
+        // 使用当前用户的 AI 配置
+        const currentAIConfig = {
+          api_key: editConfig.api_key,
+          base_url: editConfig.base_url,
+          model: isCustomModel ? customModel : editConfig.model,
+        };
 
         for (let i = 0; i < unparsedQuestions.length; i += BATCH_SIZE) {
           const batch = unparsedQuestions.slice(i, i + BATCH_SIZE);
@@ -252,7 +251,7 @@ export default function SettingsPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                ai_config: aiConfig,
+                ai_config: currentAIConfig,
                 raw_questions: batch,
                 batch_index: batchIndex,
               }),
@@ -273,7 +272,6 @@ export default function SettingsPage() {
             errors.push(`AI 批次 ${batchIndex + 1}: ${batchErr.message}`);
           }
 
-          // 批次间延迟，避免 API 限流
           if (i + BATCH_SIZE < unparsedQuestions.length) {
             await new Promise((r) => setTimeout(r, 1500));
           }
@@ -284,7 +282,7 @@ export default function SettingsPage() {
         throw new Error('未能解析出任何题目，请检查 PDF 内容格式');
       }
 
-      // ========== Step 3: 保存到数据库 ==========
+      // Step 3: 保存到数据库
       setImportProgress((prev) => ({
         ...prev,
         status: 'saving',
@@ -328,10 +326,9 @@ export default function SettingsPage() {
         }
       }
 
-      // ========== 完成 ==========
       setImportProgress({
         status: 'completed',
-        message: `导入完成！成功保存 ${totalSaved} 道题目（本地解析 ${locallyParsed.length} 题${unparsedQuestions.length > 0 ? `，AI 解析 ${allParsedQuestions.length - locallyParsed.length} 题` : ''}）`,
+        message: `导入完成！成功保存 ${totalSaved} 道题目`,
         totalQuestions: rawQuestions.length,
         parsedQuestions: allParsedQuestions.length,
         savedQuestions: totalSaved,
@@ -340,7 +337,6 @@ export default function SettingsPage() {
         errors,
       });
 
-      // 刷新题目计数
       fetchQuestionCount();
     } catch (err: any) {
       setImportProgress((prev) => ({
@@ -350,7 +346,6 @@ export default function SettingsPage() {
       }));
     }
 
-    // 清除文件输入
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -362,18 +357,12 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/import/clear', { method: 'DELETE' });
       if (res.ok) {
-        const data = await res.json();
         setQuestionCount(0);
         setShowClearConfirm(false);
         setImportProgress({
-          status: 'idle',
-          message: '',
-          totalQuestions: 0,
-          parsedQuestions: 0,
-          savedQuestions: 0,
-          currentBatch: 0,
-          totalBatches: 0,
-          errors: [],
+          status: 'idle', message: '', totalQuestions: 0,
+          parsedQuestions: 0, savedQuestions: 0, currentBatch: 0,
+          totalBatches: 0, errors: [],
         });
       } else {
         const errData = await res.json();
@@ -386,10 +375,8 @@ export default function SettingsPage() {
     }
   };
 
-  const isImporting = ['uploading', 'splitting', 'parsing', 'saving'].includes(
-    importProgress.status
-  );
-  const canImport = aiVerified && !isImporting;
+  const isImporting = ['uploading', 'splitting', 'parsing', 'saving'].includes(importProgress.status);
+  const canImport = isAdmin && aiSettings.verified && !isImporting;
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
@@ -399,7 +386,7 @@ export default function SettingsPage() {
           设置
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1">
-          配置 AI 模型并导入 PDF 题库
+          配置 AI 模型{isAdmin ? '并管理题库' : ''}
         </p>
       </div>
 
@@ -410,7 +397,7 @@ export default function SettingsPage() {
           AI 模型配置
         </h3>
         <p className="text-xs text-gray-400 mb-4">
-          AI 配置用于题目解析和智能 AI 解析功能。Supabase 数据库连接已通过环境变量固定配置。
+          每个用户独立配置，用于 AI 解析和名词速查功能
         </p>
 
         <div className="space-y-4">
@@ -421,7 +408,7 @@ export default function SettingsPage() {
             </label>
             <input
               type="password"
-              value={aiConfig.api_key}
+              value={editConfig.api_key}
               onChange={(e) => handleConfigChange('api_key', e.target.value)}
               placeholder="sk-..."
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
@@ -435,14 +422,11 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              value={aiConfig.base_url}
+              value={editConfig.base_url}
               onChange={(e) => handleConfigChange('base_url', e.target.value)}
               placeholder="https://api.openai.com/v1"
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
             />
-            <p className="text-xs text-gray-400 mt-1">
-              支持 OpenAI 兼容的自定义端点
-            </p>
           </div>
 
           {/* 模型选择 */}
@@ -451,14 +435,12 @@ export default function SettingsPage() {
               模型
             </label>
             <select
-              value={isCustomModel ? 'custom' : aiConfig.model}
+              value={isCustomModel ? 'custom' : editConfig.model}
               onChange={(e) => handleModelChange(e.target.value)}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
             >
               {MODEL_PRESETS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
+                <option key={m.value} value={m.value}>{m.label}</option>
               ))}
               <option value="custom">自定义模型...</option>
             </select>
@@ -501,10 +483,10 @@ export default function SettingsPage() {
         <div className="mt-6 flex items-center gap-3">
           <button
             onClick={handleTestAI}
-            disabled={isTesting || !aiConfig.api_key}
+            disabled={isTesting || !editConfig.api_key}
             className={clsx(
               'flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all',
-              isTesting || !aiConfig.api_key
+              isTesting || !editConfig.api_key
                 ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
                 : 'bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-500/20'
             )}
@@ -544,8 +526,7 @@ export default function SettingsPage() {
             )}
           </button>
 
-          {/* 验证状态 */}
-          {aiVerified && (
+          {aiSettings.verified && (
             <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium">
               <CheckCircle size={14} />
               AI 已验证
@@ -554,147 +535,128 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ═══════════════════ PDF 导入 ═══════════════════ */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-        <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-          <FileText size={20} className="text-blue-500" />
-          PDF 题库导入
-        </h3>
+      {/* ═══════════════════ PDF 导入（仅管理员） ═══════════════════ */}
+      {isAdmin ? (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+          <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+            <FileText size={20} className="text-blue-500" />
+            PDF 题库导入
+            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium">
+              管理员
+            </span>
+          </h3>
 
-        {/* 未验证 AI 时的提示 */}
-        {!aiVerified && (
-          <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
-            <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">请先配置并验证 AI 连接</p>
-              <p className="text-xs mt-0.5 opacity-75">
-                PDF 导入需要 AI 模型支持，用于将非结构化的题目文本解析为标准格式
+          {!aiSettings.verified && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
+              <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">请先配置并验证 AI 连接</p>
+                <p className="text-xs mt-0.5 opacity-75">
+                  PDF 导入需要 AI 模型支持
+                </p>
+              </div>
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          <button
+            onClick={handleFileSelect}
+            disabled={!canImport}
+            className={clsx(
+              'w-full py-8 rounded-xl border-2 border-dashed transition-all flex flex-col items-center gap-3',
+              canImport
+                ? 'border-blue-300 dark:border-blue-700 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 cursor-pointer'
+                : 'border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
+            )}
+          >
+            <Upload size={32} className={canImport ? 'text-blue-500' : 'text-gray-400'} />
+            <div className="text-center">
+              <p className={clsx('font-medium text-sm', canImport ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400')}>
+                {canImport ? '点击选择 PDF 文件' : '请先验证 AI 连接'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                支持任意格式的 CISSP 题目 PDF，AI 将智能识别并解析
               </p>
             </div>
-          </div>
-        )}
+          </button>
 
-        {/* 上传区域 */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <button
-          onClick={handleFileSelect}
-          disabled={!canImport}
-          className={clsx(
-            'w-full py-8 rounded-xl border-2 border-dashed transition-all flex flex-col items-center gap-3',
-            canImport
-              ? 'border-blue-300 dark:border-blue-700 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 cursor-pointer'
-              : 'border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50'
-          )}
-        >
-          <Upload
-            size={32}
-            className={canImport ? 'text-blue-500' : 'text-gray-400'}
-          />
-          <div className="text-center">
-            <p
-              className={clsx(
-                'font-medium text-sm',
-                canImport
-                  ? 'text-blue-700 dark:text-blue-300'
-                  : 'text-gray-400'
-              )}
-            >
-              {canImport ? '点击选择 PDF 文件' : '请先验证 AI 连接'}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              支持任意格式的 CISSP 题目 PDF，AI 将智能识别并解析
-            </p>
-          </div>
-        </button>
-
-        {/* 导入进度 */}
-        {importProgress.status !== 'idle' && (
-          <div className="mt-4 space-y-3">
-            {/* 进度条 */}
-            {isImporting && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin" />
-                    {importProgress.message}
-                  </span>
-                  {importProgress.totalBatches > 0 && (
-                    <span className="text-gray-500 text-xs">
-                      {importProgress.currentBatch}/{importProgress.totalBatches}
+          {/* 导入进度 */}
+          {importProgress.status !== 'idle' && (
+            <div className="mt-4 space-y-3">
+              {isImporting && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin" />
+                      {importProgress.message}
                     </span>
-                  )}
+                    {importProgress.totalBatches > 0 && (
+                      <span className="text-gray-500 text-xs">
+                        {importProgress.currentBatch}/{importProgress.totalBatches}
+                      </span>
+                    )}
+                  </div>
+                  <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${importProgress.totalBatches > 0
+                          ? (importProgress.currentBatch / importProgress.totalBatches) * 100
+                          : 0}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${
-                        importProgress.totalBatches > 0
-                          ? (importProgress.currentBatch /
-                              importProgress.totalBatches) *
-                            100
-                          : 0
-                      }%`,
-                    }}
-                  />
+              )}
+
+              {(importProgress.parsedQuestions > 0 || importProgress.savedQuestions > 0) && (
+                <div className="flex gap-4 text-xs">
+                  <span className="text-gray-500">AI 解析: {importProgress.parsedQuestions} 题</span>
+                  <span className="text-gray-500">已保存: {importProgress.savedQuestions} 题</span>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* 统计信息 */}
-            {(importProgress.parsedQuestions > 0 ||
-              importProgress.savedQuestions > 0) && (
-              <div className="flex gap-4 text-xs">
-                <span className="text-gray-500">
-                  AI 解析: {importProgress.parsedQuestions} 题
-                </span>
-                <span className="text-gray-500">
-                  已保存: {importProgress.savedQuestions} 题
-                </span>
-              </div>
-            )}
-
-            {/* 完成/错误状态 */}
-            {importProgress.status === 'completed' && (
-              <div className="p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-sm flex items-start gap-2">
-                <CheckCircle size={18} className="flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium">{importProgress.message}</p>
-                  {importProgress.errors.length > 0 && (
-                    <div className="mt-2 text-xs text-amber-600">
-                      <p>{importProgress.errors.length} 个警告:</p>
-                      {importProgress.errors.slice(0, 3).map((e, i) => (
-                        <p key={i} className="mt-0.5">
-                          • {e}
-                        </p>
-                      ))}
-                      {importProgress.errors.length > 3 && (
-                        <p className="mt-0.5">
-                          ...还有 {importProgress.errors.length - 3} 个
-                        </p>
-                      )}
-                    </div>
-                  )}
+              {importProgress.status === 'completed' && (
+                <div className="p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-sm flex items-start gap-2">
+                  <CheckCircle size={18} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">{importProgress.message}</p>
+                    {importProgress.errors.length > 0 && (
+                      <div className="mt-2 text-xs text-amber-600">
+                        <p>{importProgress.errors.length} 个警告:</p>
+                        {importProgress.errors.slice(0, 3).map((e, i) => (
+                          <p key={i} className="mt-0.5">• {e}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {importProgress.status === 'error' && (
-              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
-                <XCircle size={18} className="flex-shrink-0 mt-0.5" />
-                {importProgress.message}
-              </div>
-            )}
+              {importProgress.status === 'error' && (
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
+                  <XCircle size={18} className="flex-shrink-0 mt-0.5" />
+                  {importProgress.message}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+          <div className="flex items-center gap-3 text-gray-400">
+            <ShieldAlert size={20} />
+            <p className="text-sm">题库导入仅限管理员操作，请联系管理员</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ═══════════════════ 题库管理 ═══════════════════ */}
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
@@ -726,59 +688,56 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div>
-            {!showClearConfirm ? (
-              <button
-                onClick={() => setShowClearConfirm(true)}
-                disabled={
-                  questionCount === 0 || questionCount === null || isClearing
-                }
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all',
-                  questionCount && questionCount > 0
-                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                )}
-              >
-                <Trash2 size={16} />
-                清空题库
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-red-600 font-medium">
-                  确认清空 {questionCount} 道题目？
-                </span>
+          {/* 清空按钮仅管理员可见 */}
+          {isAdmin && (
+            <div>
+              {!showClearConfirm ? (
                 <button
-                  onClick={handleClearQuestions}
-                  disabled={isClearing}
-                  className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1"
-                >
-                  {isClearing ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={12} />
+                  onClick={() => setShowClearConfirm(true)}
+                  disabled={questionCount === 0 || questionCount === null || isClearing}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all',
+                    questionCount && questionCount > 0
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   )}
-                  确认
-                </button>
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 text-xs font-medium hover:bg-gray-200 transition-colors"
                 >
-                  取消
+                  <Trash2 size={16} />
+                  清空题库
                 </button>
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-red-600 font-medium">
+                    确认清空 {questionCount} 道题目？
+                  </span>
+                  <button
+                    onClick={handleClearQuestions}
+                    disabled={isClearing}
+                    className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors flex items-center gap-1"
+                  >
+                    {isClearing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    确认
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 text-xs font-medium hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* 说明 */}
       <div className="text-xs text-center text-gray-400 space-y-1">
         <p>
-          AI API Key 存储在浏览器本地，不会上传到服务器存储
+          AI 配置存储在服务端数据库，每个用户独立管理
         </p>
         <p>
-          Supabase 数据库连接通过环境变量配置，无需手动设置
+          题库由管理员统一导入，所有用户共享
         </p>
       </div>
     </div>

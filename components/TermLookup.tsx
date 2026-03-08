@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Search, Loader2, BookOpen, X } from 'lucide-react';
 import clsx from 'clsx';
-import { getAIConfig } from '@/lib/ai-config';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface TermResult {
   term_original: string;
@@ -15,6 +15,7 @@ interface TermResult {
 }
 
 export default function TermLookup() {
+  const { aiSettings } = useAuth();
   const [term, setTerm] = useState('');
   const [result, setResult] = useState<TermResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,13 +29,17 @@ export default function TermLookup() {
     setResult(null);
 
     try {
-      const aiConfig = getAIConfig();
+      const aiConfig = aiSettings.api_key ? {
+        api_key: aiSettings.api_key,
+        base_url: aiSettings.base_url,
+        model: aiSettings.model,
+      } : undefined;
       const res = await fetch('/api/ai/term-lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           term: term.trim(),
-          ai_config: aiConfig.api_key ? aiConfig : undefined,
+          ai_config: aiConfig,
         }),
       });
 

@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/quiz/session
 // 创建考试/练习/顺序刷题会话
-// Body: {
-//   user_id?, mode, question_count?,
-//   domain? (单域,向后兼容), domains? (多域数组),
-//   start_from? (顺序模式: 从第几题开始, question_number),
-//   time_limit?
-// }
 export async function POST(request: NextRequest) {
   try {
+    const authUser = await getUserFromRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
     const body = await request.json();
     const {
-      user_id,
       mode = 'practice',
       question_count = 25,
       domain,       // 单域 (向后兼容)

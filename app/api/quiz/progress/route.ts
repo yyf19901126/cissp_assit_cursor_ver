@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,8 +8,8 @@ export const dynamic = 'force-dynamic';
 // 获取用户各域的掌握进度
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('user_id');
+    const authUser = await getUserFromRequest(request);
+    const userId = authUser?.sub || null;
 
     const supabase = createServiceClient();
 

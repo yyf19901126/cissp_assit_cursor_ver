@@ -2,7 +2,21 @@
 -- CISSP Study Assistant - Supabase 数据库 Schema
 -- ============================================
 
--- 1. 题库表
+-- 0. 用户表（自建用户系统，不依赖 Supabase Auth）
+CREATE TABLE IF NOT EXISTS users (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role VARCHAR(10) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+  -- AI 配置（每用户独立）
+  ai_api_key TEXT DEFAULT '',
+  ai_base_url TEXT DEFAULT 'https://api.openai.com/v1',
+  ai_model TEXT DEFAULT 'gpt-4o',
+  ai_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 1. 题库表（所有用户共享）
 CREATE TABLE IF NOT EXISTS questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   question_number INTEGER NOT NULL UNIQUE,
@@ -15,10 +29,10 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. 用户答题记录表（user_id 不绑定 auth.users，支持匿名用户）
+-- 2. 用户答题记录表（用户独立）
 CREATE TABLE IF NOT EXISTS user_progress (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   user_answer VARCHAR(1) NOT NULL,
   is_correct BOOLEAN NOT NULL,
@@ -27,10 +41,10 @@ CREATE TABLE IF NOT EXISTS user_progress (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. 考试会话表（user_id 不绑定 auth.users，支持匿名用户）
+-- 3. 考试会话表（用户独立）
 CREATE TABLE IF NOT EXISTS exam_sessions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   mode VARCHAR(10) DEFAULT 'practice' CHECK (mode IN ('practice', 'exam')),
   total_questions INTEGER NOT NULL,
   current_index INTEGER DEFAULT 0,
@@ -48,34 +62,55 @@ CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_progress_question ON user_progress(question_id);
 CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id);
 
--- RLS (行级安全) 策略
--- 使用 service_role key 的 API 路由自动绕过 RLS
--- 以下策略确保安全性：仅允许 service_role 操作
+-- RLS (行级安全) — 所有操作通过 service_role API 路由完成
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_sessions ENABLE ROW LEVEL SECURITY;
-
--- questions 表对所有人可读
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+
+-- questions 表对所有人可读（包括 anon）
 CREATE POLICY "Questions are viewable by everyone" ON questions
   FOR SELECT USING (true);
 
--- user_progress 和 exam_sessions 不需要前端直接访问
--- 所有操作通过 API 路由（service_role）完成，RLS 启用但无 anon 策略即可阻止前端直连
+-- 其他表不设 anon 策略，仅 service_role 可访问
 
 -- ============================================
--- 迁移脚本（已有数据库必须执行！）
--- 在 Supabase SQL Editor 中运行以下 SQL
+-- 迁移脚本（从旧版本升级时执行）
+-- 在 Supabase SQL Editor 中运行
 -- ============================================
--- 1. 移除外键约束（支持匿名用户 UUID）
+-- 1. 创建 users 表（如果不存在）
+-- CREATE TABLE IF NOT EXISTS users (
+--   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+--   username VARCHAR(50) NOT NULL UNIQUE,
+--   password_hash TEXT NOT NULL,
+--   role VARCHAR(10) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+--   ai_api_key TEXT DEFAULT '',
+--   ai_base_url TEXT DEFAULT 'https://api.openai.com/v1',
+--   ai_model TEXT DEFAULT 'gpt-4o',
+--   ai_verified BOOLEAN DEFAULT FALSE,
+--   created_at TIMESTAMPTZ DEFAULT NOW()
+-- );
+-- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+--
+-- 2. 移除旧的 auth.users 外键约束
 -- ALTER TABLE user_progress DROP CONSTRAINT IF EXISTS user_progress_user_id_fkey;
 -- ALTER TABLE exam_sessions DROP CONSTRAINT IF EXISTS exam_sessions_user_id_fkey;
 --
--- 2. 删除旧的 RLS 策略（如果存在）
+-- 3. 添加新的 users 表外键约束
+-- ALTER TABLE user_progress ADD CONSTRAINT user_progress_user_id_fkey
+--   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+-- ALTER TABLE exam_sessions ADD CONSTRAINT exam_sessions_user_id_fkey
+--   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+--
+-- 4. 删除旧的 RLS 策略
 -- DROP POLICY IF EXISTS "Users can view own progress" ON user_progress;
 -- DROP POLICY IF EXISTS "Users can insert own progress" ON user_progress;
 -- DROP POLICY IF EXISTS "Users can view own sessions" ON exam_sessions;
 -- DROP POLICY IF EXISTS "Users can insert own sessions" ON exam_sessions;
 -- DROP POLICY IF EXISTS "Users can update own sessions" ON exam_sessions;
+-- DROP POLICY IF EXISTS "Service role can manage all progress" ON user_progress;
+-- DROP POLICY IF EXISTS "Service role can manage all sessions" ON exam_sessions;
 --
--- 3. 删除旧的错题本视图（如果存在）
--- DROP VIEW IF EXISTS wrong_questions;
+-- 5. 清理旧的匿名用户数据（可选）
+-- DELETE FROM user_progress WHERE user_id NOT IN (SELECT id FROM users);
+-- DELETE FROM exam_sessions WHERE user_id NOT IN (SELECT id FROM users);

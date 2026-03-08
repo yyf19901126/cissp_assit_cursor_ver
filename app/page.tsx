@@ -19,10 +19,10 @@ export default function Home() {
             <span className="font-bold text-xl">CISSP 复习助手</span>
           </div>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push('/login')}
             className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm text-sm font-medium transition-colors"
           >
-            进入学习
+            登录 / 注册
           </button>
         </nav>
 
@@ -46,17 +46,17 @@ export default function Home() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/login')}
               className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-bold text-lg shadow-2xl shadow-blue-500/25 transition-all flex items-center gap-2"
             >
               开始学习
               <ArrowRight size={20} />
             </button>
             <button
-              onClick={() => router.push('/quiz?mode=practice')}
+              onClick={() => router.push('/register')}
               className="px-8 py-4 rounded-2xl bg-white/5 hover:bg-white/10 backdrop-blur-sm font-medium text-lg border border-white/10 transition-all"
             >
-              快速练习
+              注册账号
             </button>
           </div>
         </div>

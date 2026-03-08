@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { CISSP_DOMAINS, Question } from '@/types/database';
-import { getAnonymousUserId } from '@/lib/anonymous-user';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   AlertTriangle,
   RotateCcw,
@@ -27,6 +27,7 @@ interface WrongQuestionItem {
 
 export default function WrongQuestionsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<number | null>(null);
   const [showMastered, setShowMastered] = useState(false);
@@ -34,18 +35,17 @@ export default function WrongQuestionsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchWrongQuestions();
-  }, []);
+    if (user) fetchWrongQuestions();
+  }, [user]);
 
   async function fetchWrongQuestions() {
     try {
-      const userId = getAnonymousUserId();
-      if (!userId) {
+      if (!user) {
         setIsLoading(false);
         return;
       }
 
-      const res = await fetch(`/api/quiz/wrong-questions?user_id=${userId}`);
+      const res = await fetch('/api/quiz/wrong-questions');
       if (res.ok) {
         const data = await res.json();
         setWrongQuestions(data.questions || []);

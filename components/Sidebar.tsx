@@ -7,10 +7,13 @@ import {
   BookOpen,
   AlertTriangle,
   Settings,
-  GraduationCap,
   Shield,
+  LogOut,
+  Crown,
+  User,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { href: '/dashboard', label: '学习总览', icon: LayoutDashboard },
@@ -21,6 +24,7 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col z-50">
@@ -61,20 +65,38 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* 底部 */}
+      {/* 底部：用户信息 */}
       <div className="p-4 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center">
-            <GraduationCap className="text-white" size={16} />
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <div
+            className={clsx(
+              'w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0',
+              user?.role === 'admin'
+                ? 'bg-gradient-to-br from-amber-400 to-orange-500'
+                : 'bg-gradient-to-br from-green-400 to-emerald-500'
+            )}
+          >
+            {user?.role === 'admin' ? (
+              <Crown className="text-white" size={16} />
+            ) : (
+              <User className="text-white" size={16} />
+            )}
           </div>
-          <div>
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-              CISSP 学员
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+              {user?.username || '...'}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              持续学习中
+              {user?.role === 'admin' ? '管理员' : '用户'}
             </p>
           </div>
+          <button
+            onClick={logout}
+            title="退出登录"
+            className="flex-shrink-0 p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </aside>
