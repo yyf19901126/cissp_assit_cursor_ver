@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       messages: [
         { role: 'user', content: 'Reply with exactly: OK' },
       ],
-      max_tokens: 10,
+      max_completion_tokens: 10,
       temperature: 0,
     });
 
