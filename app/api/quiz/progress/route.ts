@@ -17,9 +17,23 @@ export async function GET(request: NextRequest) {
     // 显示数据库连接信息（用于排查 Vercel 和本地数据不一致问题）
     const dbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'NOT_SET';
     const dbUrlPreview = dbUrl.length > 20 ? dbUrl.substring(0, 20) + '...' : dbUrl;
-    console.log('[Progress API] userId:', userId, '| DB URL:', dbUrlPreview);
+    console.log('[Progress API] userId:', userId, '| DB URL:', dbUrlPreview, '| Timestamp:', new Date().toISOString());
     
     const supabase = createServiceClient();
+    
+    // ═══════════════════ 验证查询：直接查询所有记录（不限制）═══════════════════
+    // 先做一个简单的查询，看看能获取多少条记录
+    const { data: allRecordsTest, count: allRecordsCount, error: testError } = await supabase
+      .from('user_progress')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .limit(10000); // 设置一个很大的 limit
+    
+    console.log('[Progress API] Direct query test (no range):', {
+      count: allRecordsCount,
+      recordsReturned: allRecordsTest?.length || 0,
+      error: testError?.message,
+    });
 
     // 统计 8 大域
     const domains = [
@@ -76,16 +90,27 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId);
     
-    console.log('[Progress API] Total count query:', {
+    if (progressCountError) {
+      console.error('[Progress] Error counting user_progress:', progressCountError);
+      return NextResponse.json({ error: progressCountError.message }, { status: 500 });
+    }
+
+    console.log('[Progress API] Total count query (NEW CODE):', {
       userId,
       totalCount,
-      progressCountError: progressCountError?.message,
+      timestamp: new Date().toISOString(),
     });
 
     // 分批获取所有记录（每批最多 1000 条，Supabase 的默认限制）
     let progressRecords: any[] = [];
     const BATCH_SIZE = 1000;
     const totalBatches = totalCount ? Math.ceil(totalCount / BATCH_SIZE) : 1;
+    
+    console.log('[Progress API] Starting batch fetch:', {
+      totalCount,
+      totalBatches,
+      batchSize: BATCH_SIZE,
+    });
     
     for (let i = 0; i < totalBatches; i++) {
       const from = i * BATCH_SIZE;
@@ -97,19 +122,23 @@ export async function GET(request: NextRequest) {
         .range(from, to);
       
       if (batchError) {
-        console.error(`[Progress] Error fetching batch ${i}:`, batchError);
+        console.error(`[Progress] Error fetching batch ${i} (${from}-${to}):`, batchError);
         break;
       }
       if (batch) {
+        console.log(`[Progress] Batch ${i} fetched:`, batch.length, 'records');
         progressRecords = [...progressRecords, ...batch];
+      } else {
+        console.log(`[Progress] Batch ${i} returned no data`);
       }
     }
 
-    console.log('[Progress API] user_progress query result:', {
+    console.log('[Progress API] user_progress query result (NEW CODE):', {
       userId,
       totalCount,
       recordsReturned: progressRecords.length,
       batches: totalBatches,
+      allBatchesFetched: progressRecords.length === totalCount,
     });
 
     if (progressRecords && progressRecords.length > 0) {
