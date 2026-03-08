@@ -90,7 +90,13 @@ export default function SettingsPage() {
   const fetchQuestionCount = async () => {
     setIsLoadingCount(true);
     try {
-      const res = await fetch('/api/quiz/progress', { credentials: 'include' });
+      const res = await fetch('/api/quiz/progress', {
+        credentials: 'include',
+        cache: 'no-store', // 禁用浏览器和 Vercel 缓存
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setQuestionCount(data.overall?.total_questions || 0);
