@@ -114,22 +114,22 @@ export default function WrongQuestionsPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
       {/* 标题 */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <AlertTriangle className="text-amber-500" />
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 sm:gap-3">
+            <AlertTriangle className="text-amber-500 w-6 h-6 sm:w-7 sm:h-7" />
             错题本
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
             记录你做错的题目，针对性复习薄弱知识点
           </p>
         </div>
         <button
           onClick={fetchWrongQuestions}
           disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
           title="刷新数据"
         >
           <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
@@ -151,7 +151,7 @@ export default function WrongQuestionsPage() {
       )}
 
       {/* 域过滤器 */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-3 sm:p-4">
         <div className="flex items-center gap-2 mb-3">
           <Filter size={16} className="text-gray-500" />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">

@@ -392,7 +392,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 sm:gap-3">
           <Settings className="text-gray-500" />
           设置
         </h1>
@@ -402,7 +402,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ═══════════════════ AI 配置 ═══════════════════ */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+      <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
         <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
           <Brain size={20} className="text-purple-500" />
           AI 模型配置
@@ -548,7 +548,7 @@ export default function SettingsPage() {
 
       {/* ═══════════════════ PDF 导入（仅管理员） ═══════════════════ */}
       {isAdmin ? (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
           <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
             <FileText size={20} className="text-blue-500" />
             PDF 题库导入
@@ -661,7 +661,7 @@ export default function SettingsPage() {
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
           <div className="flex items-center gap-3 text-gray-400">
             <ShieldAlert size={20} />
             <p className="text-sm">题库导入仅限管理员操作，请联系管理员</p>
@@ -670,7 +670,7 @@ export default function SettingsPage() {
       )}
 
       {/* ═══════════════════ 题库管理 ═══════════════════ */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+      <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
         <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
           <Database size={20} className="text-green-500" />
           题库管理
@@ -679,7 +679,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="text-center">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
                 {isLoadingCount ? (
                   <Loader2 size={24} className="animate-spin inline" />
                 ) : questionCount !== null ? (

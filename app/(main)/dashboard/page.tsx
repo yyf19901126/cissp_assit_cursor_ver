@@ -122,21 +122,21 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
       {/* 欢迎头部 */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
             学习总览
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
             跟踪你的 CISSP 复习进度，找到薄弱环节，针对性突破
           </p>
         </div>
         <button
           onClick={fetchProgress}
           disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
           title="刷新数据"
         >
           <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
@@ -177,7 +177,7 @@ export default function DashboardPage() {
       )}
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={<BookOpen size={22} />}
           label="题库总量"
@@ -207,13 +207,13 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* 雷达图 */}
         <DomainRadarChart data={domainProgress} />
 
         {/* 薄弱领域 + 快速操作 */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+        <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
             <AlertTriangle size={20} className="text-amber-500" />
             薄弱领域 Top 3
           </h3>
@@ -280,83 +280,90 @@ export default function DashboardPage() {
             <button
               onClick={() => router.push('/quiz?mode=practice')}
               className={clsx(
-                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                'w-full flex items-center justify-between p-3 sm:p-4 rounded-xl text-white transition-all shadow-lg text-sm sm:text-base',
                 overallStats.total_questions > 0
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
                   : 'bg-gray-400 cursor-not-allowed shadow-none'
               )}
               disabled={overallStats.total_questions === 0}
             >
-              <div className="flex items-center gap-3">
-                <Play size={20} />
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Play size={18} className="sm:w-5 sm:h-5" />
                 <span className="font-medium">随机练习</span>
               </div>
-              <ArrowRight size={18} />
+              <ArrowRight size={16} className="sm:w-[18px] sm:h-[18px] flex-shrink-0" />
             </button>
             <button
               onClick={() => router.push('/quiz?mode=exam')}
               className={clsx(
-                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                'w-full flex items-center justify-between p-3 sm:p-4 rounded-xl text-white transition-all shadow-lg text-sm sm:text-base',
                 overallStats.total_questions > 0
                   ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-purple-500/20'
                   : 'bg-gray-400 cursor-not-allowed shadow-none'
               )}
               disabled={overallStats.total_questions === 0}
             >
-              <div className="flex items-center gap-3">
-                <Target size={20} />
-                <span className="font-medium">模拟考试 (125题 / 180分钟)</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Target size={18} className="sm:w-5 sm:h-5" />
+                <span className="font-medium text-left">
+                  <span className="hidden sm:inline">模拟考试 (125题 / 180分钟)</span>
+                  <span className="sm:hidden">模拟考试</span>
+                </span>
               </div>
-              <ArrowRight size={18} />
+              <ArrowRight size={16} className="sm:w-[18px] sm:h-[18px] flex-shrink-0" />
             </button>
             <button
               onClick={() => router.push('/quiz?mode=sequential')}
               className={clsx(
-                'w-full flex items-center justify-between p-4 rounded-xl text-white transition-all shadow-lg',
+                'w-full flex items-center justify-between p-3 sm:p-4 rounded-xl text-white transition-all shadow-lg text-sm sm:text-base',
                 overallStats.total_questions > 0
                   ? 'bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 shadow-green-500/20'
                   : 'bg-gray-400 cursor-not-allowed shadow-none'
               )}
               disabled={overallStats.total_questions === 0}
             >
-              <div className="flex items-center gap-3">
-                <ListOrdered size={20} />
-                <span className="font-medium">顺序刷题（可暂停续做）</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <ListOrdered size={18} className="sm:w-5 sm:h-5" />
+                <span className="font-medium text-left">
+                  <span className="hidden sm:inline">顺序刷题（可暂停续做）</span>
+                  <span className="sm:hidden">顺序刷题</span>
+                </span>
               </div>
-              <ArrowRight size={18} />
+              <ArrowRight size={16} className="sm:w-[18px] sm:h-[18px] flex-shrink-0" />
             </button>
           </div>
         </div>
       </div>
 
       {/* 各域详细进度 */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-        <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-bold text-gray-800 dark:text-gray-200 mb-4">
           📋 八大知识域详情
         </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+            <table className="w-full text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th className="text-left py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium">
                   域
                 </th>
-                <th className="text-left py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-left py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium">
                   名称
                 </th>
-                <th className="text-center py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-center py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium hidden sm:table-cell">
                   总题数
                 </th>
-                <th className="text-center py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-center py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium">
                   已答
                 </th>
-                <th className="text-center py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-center py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium">
                   正确率
                 </th>
-                <th className="text-center py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-center py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium hidden md:table-cell">
                   进度
                 </th>
-                <th className="text-center py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">
+                <th className="text-center py-2 sm:py-3 px-2 sm:px-4 text-gray-500 dark:text-gray-400 font-medium">
                   操作
                 </th>
               </tr>
@@ -398,7 +405,7 @@ export default function DashboardPage() {
                       {d.accuracy}%
                     </span>
                   </td>
-                  <td className="py-3 px-4">
+                  <td className="py-2 sm:py-3 px-2 sm:px-4 hidden md:table-cell">
                     <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-indigo-500 rounded-full transition-all"
@@ -412,14 +419,14 @@ export default function DashboardPage() {
                       />
                     </div>
                   </td>
-                  <td className="text-center py-3 px-4">
+                  <td className="text-center py-2 sm:py-3 px-2 sm:px-4">
                     <button
                       onClick={() =>
                         router.push(`/quiz?domain=${d.domain_id}&mode=practice`)
                       }
                       disabled={d.total_questions === 0}
                       className={clsx(
-                        'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
+                        'px-2 sm:px-3 py-1 rounded-lg text-xs font-medium transition-colors',
                         d.total_questions > 0
                           ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200'
                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -432,6 +439,7 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>
@@ -460,15 +468,15 @@ function StatCard({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-5">
-      <div className="flex items-center gap-3">
-        <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center', colorMap[color])}>
+    <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-3 sm:p-5">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className={clsx('w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0', colorMap[color])}>
           {icon}
         </div>
-        <div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-          {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
+          {sub && <p className="text-xs text-gray-400 mt-0.5 truncate">{sub}</p>}
         </div>
       </div>
     </div>

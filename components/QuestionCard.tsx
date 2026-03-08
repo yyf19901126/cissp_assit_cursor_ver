@@ -111,10 +111,10 @@ export default function QuestionCard({
   ];
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div className="bg-white dark:bg-gray-900 rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 overflow-hidden">
       {/* 顶部进度 */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 flex items-center justify-between">
-        <span className="text-white text-sm font-medium">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
+        <span className="text-white text-xs sm:text-sm font-medium">
           题目 {questionIndex + 1} / {totalQuestions}
         </span>
         <span className="text-white/80 text-xs px-2 py-1 rounded-full bg-white/20">
@@ -131,8 +131,8 @@ export default function QuestionCard({
       </div>
 
       {/* 题干 */}
-      <div className="p-6">
-        <div className="mb-2 flex items-center gap-2">
+      <div className="p-4 sm:p-6">
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium px-2 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300">
             Domain {question.domain}
           </span>
@@ -141,26 +141,26 @@ export default function QuestionCard({
           </span>
         </div>
 
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-relaxed mb-6">
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 leading-relaxed mb-4 sm:mb-6">
           {highlightKeywords(question.question_text, allKeywords)}
         </h2>
 
         {/* 选项 */}
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {question.options.map((option) => (
             <button
               key={option.label}
               onClick={() => handleSelect(option.label)}
               disabled={isSubmitted && mode === 'practice'}
               className={clsx(
-                'w-full text-left p-4 rounded-xl border-2 transition-all duration-200',
-                'flex items-start gap-3',
+                'w-full text-left p-3 sm:p-4 rounded-lg sm:rounded-xl border-2 transition-all duration-200',
+                'flex items-start gap-2 sm:gap-3',
                 getOptionStyle(option.label)
               )}
             >
               <span
                 className={clsx(
-                  'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold',
+                  'flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold',
                   selectedAnswer === option.label
                     ? 'bg-blue-500 text-white'
                     : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
@@ -168,7 +168,7 @@ export default function QuestionCard({
               >
                 {option.label}
               </span>
-              <span className="text-gray-700 dark:text-gray-300 pt-1">
+              <span className="text-sm sm:text-base text-gray-700 dark:text-gray-300 pt-0.5 sm:pt-1 flex-1">
                 {option.text}
               </span>
               {showResult && result && option.label === result.correct_answer && (
@@ -185,23 +185,24 @@ export default function QuestionCard({
         </div>
 
         {/* 操作按钮 */}
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-4 sm:mt-6 flex items-center gap-2 sm:gap-3 flex-wrap">
           {mode === 'exam' ? (
             /* 考试模式：选中即提交，显示已选状态 */
             isSubmitted && selectedAnswer ? (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                <CheckCircle size={18} />
-                已选择 {selectedAnswer}（可点击其他选项更改）
+              <div className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+                <CheckCircle size={16} className="sm:w-[18px] sm:h-[18px]" />
+                <span className="hidden sm:inline">已选择 {selectedAnswer}（可点击其他选项更改）</span>
+                <span className="sm:hidden">已选 {selectedAnswer}</span>
               </div>
             ) : (
-              <div className="text-sm text-gray-400">请选择一个选项</div>
+              <div className="text-xs sm:text-sm text-gray-400">请选择一个选项</div>
             )
           ) : !isSubmitted ? (
             <button
               onClick={handleSubmit}
               disabled={!selectedAnswer}
               className={clsx(
-                'px-6 py-3 rounded-xl font-medium transition-all duration-200',
+                'px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-medium transition-all duration-200 text-sm sm:text-base',
                 selectedAnswer
                   ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/25'
                   : 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
@@ -212,10 +213,10 @@ export default function QuestionCard({
           ) : (
             showResult &&
             result && (
-              <div className="flex items-center gap-3 w-full">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full">
                 <div
                   className={clsx(
-                    'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium',
+                    'flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium flex-1',
                     result.is_correct
                       ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                       : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
@@ -223,20 +224,24 @@ export default function QuestionCard({
                 >
                   {result.is_correct ? (
                     <>
-                      <CheckCircle size={18} /> 回答正确！
+                      <CheckCircle size={16} className="sm:w-[18px] sm:h-[18px]" /> 
+                      <span>回答正确！</span>
                     </>
                   ) : (
                     <>
-                      <XCircle size={18} /> 回答错误，正确答案是 {result.correct_answer}
+                      <XCircle size={16} className="sm:w-[18px] sm:h-[18px]" /> 
+                      <span className="hidden sm:inline">回答错误，正确答案是 {result.correct_answer}</span>
+                      <span className="sm:hidden">错误，答案是 {result.correct_answer}</span>
                     </>
                   )}
                 </div>
                 <button
                   onClick={onRequestExplanation}
-                  className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/30 transition-colors text-sm font-medium"
+                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/30 transition-colors text-xs sm:text-sm font-medium"
                 >
-                  <Lightbulb size={18} />
-                  AI 深度解析
+                  <Lightbulb size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  <span className="hidden sm:inline">AI 深度解析</span>
+                  <span className="sm:hidden">AI 解析</span>
                 </button>
               </div>
             )
@@ -245,11 +250,11 @@ export default function QuestionCard({
 
         {/* 基础解析（练习模式提交后显示） */}
         {showResult && result && result.explanation && (
-          <div className="mt-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          <div className="mt-4 p-3 sm:p-4 rounded-lg sm:rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               📝 基础解析
             </h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
               {result.explanation}
             </p>
           </div>
