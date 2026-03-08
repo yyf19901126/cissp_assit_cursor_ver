@@ -56,17 +56,31 @@ CREATE TABLE IF NOT EXISTS exam_sessions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 4. 顺序刷题进度表（用户独立，跨平台同步）
+CREATE TABLE IF NOT EXISTS sequential_progress (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_question_number INTEGER NOT NULL, -- 最后完成的题号
+  total_questions INTEGER NOT NULL,      -- 题库总题数
+  answered_count INTEGER DEFAULT 0,      -- 已答题数
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id) -- 每个用户只有一条进度记录
+);
+
 -- 索引优化
 CREATE INDEX IF NOT EXISTS idx_questions_domain ON questions(domain);
 CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_progress_question ON user_progress(question_id);
 CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sequential_progress_user ON sequential_progress(user_id);
 
 -- RLS (行级安全) — 所有操作通过 service_role API 路由完成
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sequential_progress ENABLE ROW LEVEL SECURITY;
 
 -- questions 表对所有人可读（包括 anon）
 CREATE POLICY "Questions are viewable by everyone" ON questions

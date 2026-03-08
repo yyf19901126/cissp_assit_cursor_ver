@@ -14,6 +14,7 @@ import {
   saveSequentialProgress,
   clearSequentialProgress,
 } from '@/lib/sequential-progress';
+import type { SequentialProgress } from '@/lib/sequential-progress';
 import {
   Timer,
   ChevronLeft,
@@ -67,13 +68,26 @@ function QuizContent() {
   const [customQuestionCount, setCustomQuestionCount] = useState(25);
 
   // 顺序模式
-  const [sequentialProgress, setSequentialProgressState] = useState(
-    user ? getSequentialProgress(user.id) : null
-  );
-  const [hasMoreQuestions, setHasMoreQuestions] = useState(false);
+  const [sequentialProgress, setSequentialProgressState] = useState<SequentialProgress | null>(null);
   const [sequentialGrandTotal, setSequentialGrandTotal] = useState(0);
-  const [sequentialStartFrom, setSequentialStartFrom] = useState(0);
-  const [sequentialBatchSize, setSequentialBatchSize] = useState(25);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(false);
+
+  // 加载顺序刷题进度（从数据库）
+  useEffect(() => {
+    if (mode === 'sequential' && user && !isLoadingProgress) {
+      setIsLoadingProgress(true);
+      getSequentialProgress().then((progress) => {
+        setSequentialProgressState(progress);
+        if (progress) {
+          setSequentialGrandTotal(progress.totalQuestions);
+        }
+        setIsLoadingProgress(false);
+      }).catch((err) => {
+        console.error('Failed to load sequential progress:', err);
+        setIsLoadingProgress(false);
+      });
+    }
+  }, [mode, user, isLoadingProgress]);
 
   // 追踪用户选中但未提交的答案（用于导航时自动提交）
   const pendingAnswerRef = useRef<{ questionId: string; answer: string } | null>(null);
@@ -122,10 +136,9 @@ function QuizContent() {
 
   // ═══════════════════ 开始答题 ═══════════════════
   const startQuiz = useCallback(
-    async (resumeFrom?: number) => {
+    async () => {
       setIsLoadingQuestions(true);
       setLoadError(null);
-      setCurrentIndex(0);
       setAnswers({});
       setResults({});
       setIsCompleted(false);
@@ -134,8 +147,6 @@ function QuizContent() {
       if (mode === 'exam') {
         setTimeRemaining(180 * 60);
       }
-
-      const startFrom = resumeFrom ?? sequentialStartFrom;
 
       try {
         // ═══════════════════ 重做错题模式 ═══════════════════
@@ -158,7 +169,7 @@ function QuizContent() {
         }
 
         const questionCount =
-          mode === 'exam' ? 125 : mode === 'sequential' ? sequentialBatchSize : customQuestionCount;
+          mode === 'exam' ? 125 : customQuestionCount;
 
           const res = await fetch('/api/quiz/session', {
             method: 'POST',
@@ -168,22 +179,14 @@ function QuizContent() {
               mode: wrongQuestionsParam ? 'practice' : mode, // 错题模式强制使用练习模式
               // 顺序模式不需要域筛选，刷整个题库
               domains: wrongQuestionsParam ? undefined : (mode === 'sequential' ? undefined : (selectedDomains.length > 0 ? selectedDomains : undefined)),
-              question_count: wrongQuestionsParam ? undefined : questionCount, // 错题模式使用所有错题
-              start_from: wrongQuestionsParam ? undefined : (mode === 'sequential' ? startFrom : undefined),
+              question_count: wrongQuestionsParam ? undefined : (mode === 'sequential' ? undefined : questionCount), // 顺序模式获取所有题目
               wrong_question_ids: wrongQuestionIds, // 错题ID列表
             }),
           });
 
         const data = await res.json();
 
-        // 顺序模式无更多题目
-        if (data.error === 'no_more_questions') {
-          if (user) clearSequentialProgress(user.id);
-          setSequentialProgressState(null);
-          setLoadError('🎉 恭喜！所有题目已完成，进度已重置。');
-          setIsLoadingQuestions(false);
-          return;
-        }
+        // 顺序模式不再有"无更多题目"的概念，因为获取所有题目
 
         if (!res.ok) {
           setLoadError(data.error || '无法创建答题会话');
@@ -200,7 +203,6 @@ function QuizContent() {
 
         // 保存顺序模式元数据
         if (mode === 'sequential') {
-          setHasMoreQuestions(data.has_more);
           setSequentialGrandTotal(data.grand_total);
         }
 
@@ -225,6 +227,24 @@ function QuizContent() {
         }
 
         setQuestions(loadedQuestions);
+
+        // 顺序模式：如果有进度，从上次完成的题号之后开始
+        if (mode === 'sequential' && sequentialProgress && sequentialProgress.lastQuestionNumber > 0) {
+          // 找到上次完成的题目在列表中的位置
+          const lastQuestionIndex = loadedQuestions.findIndex(
+            (q) => q.question_number === sequentialProgress.lastQuestionNumber
+          );
+          if (lastQuestionIndex >= 0 && lastQuestionIndex < loadedQuestions.length - 1) {
+            // 从下一题开始
+            setCurrentIndex(lastQuestionIndex + 1);
+          } else {
+            // 如果已经完成所有题目，从头开始
+            setCurrentIndex(0);
+          }
+        } else {
+          setCurrentIndex(0);
+        }
+
         setIsStarted(true);
       } catch (err: any) {
         setLoadError(`网络错误: ${err.message || '请检查网络连接'}`);
@@ -232,7 +252,7 @@ function QuizContent() {
         setIsLoadingQuestions(false);
       }
     },
-    [mode, selectedDomains, customQuestionCount, sequentialStartFrom, sequentialBatchSize, wrongQuestionsParam, user]
+    [mode, selectedDomains, customQuestionCount, wrongQuestionsParam, user, sequentialProgress, questions]
   );
 
   // ═══════════════════ 错题模式：自动开始 ═══════════════════
@@ -292,16 +312,18 @@ function QuizContent() {
         }
         setResults((prev) => ({ ...prev, [question.id]: data }));
 
-        // 顺序模式：保存进度
-        if (mode === 'sequential' && user) {
-          const progress = getSequentialProgress(user.id);
-          saveSequentialProgress(user.id, {
+        // 顺序模式：保存进度到数据库
+        if (mode === 'sequential' && sequentialGrandTotal > 0) {
+          // 计算已答题数：当前题号（因为顺序刷题是按题号顺序的）
+          const answeredCount = question.question_number;
+          const newProgress: SequentialProgress = {
             lastQuestionNumber: question.question_number,
             totalQuestions: sequentialGrandTotal,
-            answeredCount: (progress?.answeredCount || 0) + 1,
+            answeredCount: answeredCount,
             timestamp: new Date().toISOString(),
-          });
-          setSequentialProgressState(getSequentialProgress(user.id));
+          };
+          await saveSequentialProgress(newProgress);
+          setSequentialProgressState(newProgress);
         }
         return;
       }
@@ -425,20 +447,6 @@ function QuizContent() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // ═══════════════════ 顺序模式：继续下一批 ═══════════════════
-  const handleSequentialNext = () => {
-    const lastQuestion = questions[questions.length - 1];
-    if (lastQuestion) {
-      setSequentialStartFrom(lastQuestion.question_number);
-      setIsStarted(false);
-      setIsCompleted(false);
-      setQuestions([]);
-      // 立即开始下一批
-      setTimeout(() => {
-        startQuiz(lastQuestion.question_number);
-      }, 100);
-    }
-  };
 
   // ═══════════════════ 未开始：选择界面 ═══════════════════
   if (!isStarted) {
@@ -625,42 +633,15 @@ function QuizContent() {
           </div>
         )}
 
-        {/* 顺序模式：每批题目数量 */}
+        {/* 顺序模式说明 */}
         {mode === 'sequential' && (
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
-            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-4">每批题目数量</h3>
-            <div className="flex items-center gap-4">
-              <input
-                type="number"
-                min={5}
-                max={200}
-                value={sequentialBatchSize}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value) || 25;
-                  setSequentialBatchSize(Math.max(5, Math.min(200, val)));
-                }}
-                className="w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-center font-bold text-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-              />
-              <span className="text-sm text-gray-500">题 / 批</span>
-              <div className="flex gap-2 ml-2">
-                {[10, 25, 50, 100].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setSequentialBatchSize(n)}
-                    className={clsx(
-                      'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                      sequentialBatchSize === n
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'
-                    )}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-gray-400">
-              每完成一批后可继续下一批，进度会自动保存
+            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+              <ListOrdered size={18} className="text-green-500" />
+              顺序刷题模式
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              按题号顺序刷完整个题库，进度会自动保存到云端，支持跨设备同步。
             </p>
           </div>
         )}
@@ -699,8 +680,7 @@ function QuizContent() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  setSequentialStartFrom(sequentialProgress.lastQuestionNumber);
-                  startQuiz(sequentialProgress.lastQuestionNumber);
+                  startQuiz();
                 }}
                 disabled={isLoadingQuestions}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors shadow-lg shadow-green-500/20"
@@ -709,10 +689,10 @@ function QuizContent() {
                 继续上次进度
               </button>
               <button
-                onClick={() => {
-                  if (user) clearSequentialProgress(user.id);
+                onClick={async () => {
+                  await clearSequentialProgress();
                   setSequentialProgressState(null);
-                  setSequentialStartFrom(0);
+                  startQuiz();
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
@@ -726,7 +706,7 @@ function QuizContent() {
         {/* 开始按钮（错题模式下隐藏，自动开始） */}
         {!wrongQuestionsParam && (
         <button
-          onClick={() => startQuiz(mode === 'sequential' ? sequentialStartFrom : undefined)}
+          onClick={() => startQuiz()}
           disabled={isLoadingQuestions}
           className={clsx(
             'w-full py-4 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2',
@@ -772,7 +752,7 @@ function QuizContent() {
             {mode === 'exam'
               ? '考试完成！'
               : mode === 'sequential'
-              ? '本批完成！'
+              ? '顺序刷题进行中'
               : '练习完成！'}
           </h2>
           <p className="text-5xl font-bold text-indigo-600 mb-2">{accuracy}%</p>
@@ -791,21 +771,10 @@ function QuizContent() {
           )}
 
           <div className="mt-6 flex gap-3 justify-center flex-wrap">
-            {/* 顺序模式：继续下一批 */}
-            {mode === 'sequential' && hasMoreQuestions && (
-              <button
-                onClick={handleSequentialNext}
-                className="px-6 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
-              >
-                <ArrowRight size={18} />
-                继续下一批 {sequentialBatchSize} 题
-              </button>
-            )}
-
-            {/* 顺序模式全部完成 */}
-            {mode === 'sequential' && !hasMoreQuestions && (
-              <div className="w-full mb-2 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-300 text-sm font-medium">
-                🎉 恭喜！所有题目已刷完！
+            {/* 顺序模式提示 */}
+            {mode === 'sequential' && (
+              <div className="w-full mb-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 text-sm font-medium">
+                💡 提示：顺序刷题模式已加载所有题目，可以自由浏览和答题
               </div>
             )}
 
