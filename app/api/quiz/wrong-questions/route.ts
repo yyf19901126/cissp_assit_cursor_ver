@@ -112,7 +112,15 @@ export async function GET(request: NextRequest) {
 
     const questions = Object.values(grouped);
 
-    return NextResponse.json({ questions });
+    const response = NextResponse.json({ questions });
+
+    // ═══════════════════ 禁用所有缓存 ═══════════════════
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+
+    return response;
   } catch (error: any) {
     console.error('Wrong questions API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -40,7 +40,13 @@ export default function WrongQuestionsPage() {
     setFetchError(null);
     setIsLoading(true);
     try {
-      const res = await fetch('/api/quiz/wrong-questions', { credentials: 'include' });
+      const res = await fetch('/api/quiz/wrong-questions', {
+        credentials: 'include',
+        cache: 'no-store', // 禁用浏览器缓存
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         console.log('[WrongQuestions] API returned', (data.questions || []).length, 'questions');

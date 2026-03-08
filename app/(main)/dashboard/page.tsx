@@ -48,7 +48,13 @@ export default function DashboardPage() {
     setError(null);
     setIsLoading(true);
     try {
-      const res = await fetch('/api/quiz/progress', { credentials: 'include' });
+      const res = await fetch('/api/quiz/progress', {
+        credentials: 'include',
+        cache: 'no-store', // 禁用浏览器缓存
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       console.log('[Dashboard] API status:', res.status);
       if (res.ok) {
         const data = await res.json();

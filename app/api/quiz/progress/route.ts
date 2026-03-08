@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
     const totalAnswered = progressData.length;
     const totalCorrect = progressData.filter((p: any) => p.is_correct).length;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       domains: progress,
       overall: {
         total_questions: totalQuestionsCount,
@@ -159,6 +159,14 @@ export async function GET(request: NextRequest) {
         method: 'separate_queries',
       },
     });
+
+    // ═══════════════════ 禁用所有缓存 ═══════════════════
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+
+    return response;
   } catch (error: any) {
     console.error('Progress API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
