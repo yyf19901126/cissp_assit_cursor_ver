@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
-import { createAIClient, getModelName } from '@/lib/openai';
+import { createAIClient, getModelName, DynamicAIConfig } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/ai/explain
 // AI 深度解析题目
-// Body: { question_id, user_answer }
+// Body: { question_id, user_answer, ai_config?: { api_key, base_url, model } }
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { question_id, user_answer } = body;
+    const { question_id, user_answer, ai_config } = body;
 
     if (!question_id) {
       return NextResponse.json({ error: '缺少 question_id' }, { status: 400 });
@@ -29,8 +29,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '题目不存在' }, { status: 404 });
     }
 
-    const openai = createAIClient();
-    const model = getModelName();
+    // 使用动态 AI 配置或环境变量
+    const aiConfigTyped: DynamicAIConfig | undefined = ai_config;
+    const openai = createAIClient(aiConfigTyped);
+    const model = getModelName(aiConfigTyped);
 
     // 构建选项文本
     const optionsText = question.options

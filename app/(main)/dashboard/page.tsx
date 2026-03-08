@@ -108,16 +108,13 @@ export default function DashboardPage() {
             题库为空
           </h3>
           <p className="text-gray-500 text-sm mb-4">
-            还没有导入题目，请先使用 PDF 解析脚本导入题库
+            还没有导入题目，请前往设置页面上传 PDF 题库
           </p>
-          <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-xs mb-4 max-w-md mx-auto">
-            npx ts-node scripts/parse-pdf.ts ./cissp-questions.pdf
-          </code>
           <button
             onClick={() => router.push('/settings')}
             className="px-6 py-2 rounded-xl bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors"
           >
-            查看导入说明
+            前往导入题库
           </button>
         </div>
       )}

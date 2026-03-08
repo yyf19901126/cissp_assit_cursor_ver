@@ -7,6 +7,7 @@ import NavigationMatrix from '@/components/NavigationMatrix';
 import AIExplanationPanel from '@/components/AIExplanation';
 import { Question, AIExplanation } from '@/types/database';
 import { CISSP_DOMAINS } from '@/types/database';
+import { getAIConfig } from '@/lib/ai-config';
 import {
   Timer,
   RotateCcw,
@@ -196,12 +197,14 @@ function QuizContent() {
     setAiExplanation(null);
 
     try {
+      const aiConfig = getAIConfig();
       const res = await fetch('/api/ai/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question_id: question.id,
           user_answer: answers[question.id],
+          ai_config: aiConfig.api_key ? aiConfig : undefined,
         }),
       });
 
