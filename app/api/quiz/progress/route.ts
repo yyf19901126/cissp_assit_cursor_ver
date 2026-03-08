@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const userId = authUser.sub;
+    console.log('[Progress API] userId from token:', userId);
 
     const supabase = createServiceClient();
 
@@ -59,7 +60,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 获取用户答题数据
+    // 先做一个简单的 count 查询（不用 join），确认数据存在
+    const { count: rawCount, error: rawCountErr } = await supabase
+      .from('user_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    console.log('[Progress API] raw count for userId', userId, ':', rawCount, rawCountErr ? 'ERR:'+rawCountErr.message : 'OK');
+
+    // 获取用户答题数据（带 join）
     let progressData: any[] = [];
     const { data, error: progressError } = await supabase
       .from('user_progress')
@@ -67,9 +75,19 @@ export async function GET(request: NextRequest) {
       .eq('user_id', userId);
 
     if (progressError) {
-      console.error('[Progress] Error fetching user progress:', progressError);
+      console.error('[Progress] Error fetching user progress (with join):', progressError);
+      // 如果 join 失败，尝试不用 join
+      const { data: fallbackData, error: fallbackErr } = await supabase
+        .from('user_progress')
+        .select('question_id, is_correct')
+        .eq('user_id', userId);
+      if (!fallbackErr && fallbackData) {
+        console.log('[Progress] Fallback query returned:', fallbackData.length, 'records');
+        progressData = fallbackData;
+      }
     } else {
       progressData = data || [];
+      console.log('[Progress API] join query returned:', progressData.length, 'records');
     }
 
     const progress = domains.map((d) => {
@@ -106,6 +124,11 @@ export async function GET(request: NextRequest) {
         total_answered: totalAnswered,
         total_correct: totalCorrect,
         accuracy: totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
+      },
+      _debug: {
+        user_id: userId,
+        raw_progress_count: rawCount,
+        join_progress_count: progressData.length,
       },
     });
   } catch (error: any) {

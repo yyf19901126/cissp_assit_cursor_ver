@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
         debug: { hasCookie: !!cookieValue },
       }, { status: 401 });
     }
+    console.log('[Submit API] userId from token:', authUser.sub);
 
     const body = await request.json();
     const { question_id, user_answer, time_spent, mode } = body;

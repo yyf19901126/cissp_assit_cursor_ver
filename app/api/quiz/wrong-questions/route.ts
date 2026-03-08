@@ -13,8 +13,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const userId = authUser.sub;
+    console.log('[WrongQ API] userId from token:', userId);
 
     const supabase = createServiceClient();
+
+    // 先简单 count
+    const { count: rawWrongCount } = await supabase
+      .from('user_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('is_correct', false);
+    console.log('[WrongQ API] raw wrong count:', rawWrongCount);
 
     // 查询所有答错的记录，关联题目信息
     const { data, error } = await supabase

@@ -48,9 +48,12 @@ export default function DashboardPage() {
     setIsLoading(true);
     try {
       const res = await fetch('/api/quiz/progress', { credentials: 'include' });
+      console.log('[Dashboard] API status:', res.status, 'user:', user?.id);
       if (res.ok) {
         const data = await res.json();
-        console.log('[Dashboard] Progress loaded:', data.overall?.total_answered, 'answered');
+        console.log('[Dashboard] API response overall:', JSON.stringify(data.overall));
+        console.log('[Dashboard] _debug from server:', JSON.stringify(data._debug));
+        console.log('[Dashboard] AuthContext user.id:', user?.id);
         if (data.domains) {
           setDomainProgress(data.domains);
         }
