@@ -478,6 +478,7 @@ function QuizContent() {
         <div className="lg:col-span-2 space-y-6">
           {currentQuestion && (
             <QuestionCard
+              key={currentQuestion.id}
               question={currentQuestion}
               questionIndex={currentIndex}
               totalQuestions={questions.length}
