@@ -64,38 +64,56 @@ export async function GET(request: NextRequest) {
     // 策略：先查 user_progress，再查 questions，避免 join 在 Vercel 上的问题
     let progressData: any[] = [];
     
-    // 1. 先查 user_progress（不 join）
-    const { data: progressRecords, error: progressError } = await supabase
+    // 1. 先查 user_progress（不 join，显式设置 limit 避免默认限制）
+    const { data: progressRecords, error: progressError, count: progressCount } = await supabase
       .from('user_progress')
-      .select('question_id, is_correct')
-      .eq('user_id', userId);
+      .select('question_id, is_correct', { count: 'exact' })
+      .eq('user_id', userId)
+      .range(0, 9999); // 显式设置范围，确保获取所有记录
+
+    console.log('[Progress API] user_progress query:', {
+      userId,
+      recordsReturned: progressRecords?.length || 0,
+      count: progressCount,
+      error: progressError?.message,
+    });
 
     if (progressError) {
       console.error('[Progress] Error fetching user_progress:', progressError);
     } else if (progressRecords && progressRecords.length > 0) {
       // 2. 获取所有 question_id
       const questionIds = [...new Set(progressRecords.map((r) => r.question_id))];
+      console.log('[Progress API] Unique question_ids:', questionIds.length);
       
-      // 3. 批量查询 questions 获取 domain
-      const { data: questionsData, error: questionsError } = await supabase
-        .from('questions')
-        .select('id, domain')
-        .in('id', questionIds);
-
-      if (questionsError) {
-        console.error('[Progress] Error fetching questions:', questionsError);
-        // 即使 questions 查询失败，也使用 progressRecords（只是没有 domain 信息）
-        progressData = progressRecords.map((r) => ({ ...r, questions: null }));
-      } else {
-        // 4. 在内存中合并数据
-        const questionMap = new Map((questionsData || []).map((q) => [q.id, q.domain]));
-        progressData = progressRecords.map((r) => ({
-          question_id: r.question_id,
-          is_correct: r.is_correct,
-          questions: { domain: questionMap.get(r.question_id) || null },
-        }));
+      // 3. 批量查询 questions 获取 domain（分批查询，避免 in() 参数过多）
+      let questionMap = new Map<string, number | null>();
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < questionIds.length; i += BATCH_SIZE) {
+        const batch = questionIds.slice(i, i + BATCH_SIZE);
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('questions')
+          .select('id, domain')
+          .in('id', batch);
+        
+        if (questionsError) {
+          console.error(`[Progress] Error fetching questions batch ${i}-${i+BATCH_SIZE}:`, questionsError);
+        } else if (questionsData) {
+          questionsData.forEach((q) => questionMap.set(q.id, q.domain));
+        }
       }
-      console.log('[Progress API] Fetched', progressData.length, 'records (method: separate queries)');
+      
+      console.log('[Progress API] Questions mapped:', questionMap.size, 'out of', questionIds.length);
+      
+      // 4. 在内存中合并数据
+      progressData = progressRecords.map((r) => ({
+        question_id: r.question_id,
+        is_correct: r.is_correct,
+        questions: { domain: questionMap.get(r.question_id) ?? null },
+      }));
+      
+      console.log('[Progress API] Final progressData length:', progressData.length);
+      console.log('[Progress API] Correct count:', progressData.filter((p) => p.is_correct).length);
+      console.log('[Progress API] Wrong count:', progressData.filter((p) => !p.is_correct).length);
     } else {
       console.log('[Progress API] No progress records found for user', userId);
     }
