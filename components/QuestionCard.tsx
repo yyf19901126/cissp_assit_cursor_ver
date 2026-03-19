@@ -240,7 +240,7 @@ export default function QuestionCard({
                   className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/30 transition-colors text-xs sm:text-sm font-medium"
                 >
                   <Lightbulb size={16} className="sm:w-[18px] sm:h-[18px]" />
-                  <span className="hidden sm:inline">AI 深度解析</span>
+                  <span className="hidden sm:inline">AI解析</span>
                   <span className="sm:hidden">AI 解析</span>
                 </button>
               </div>

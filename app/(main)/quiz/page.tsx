@@ -497,32 +497,28 @@ function QuizContent() {
       } else {
         const errData = await res.json().catch(() => ({}));
         setAiExplanation({
-          deep_analysis: `AI 解析请求失败: ${errData.error || '请检查 AI 配置'}`,
+          quick_takeaway: `AI 解析请求失败: ${errData.error || '请检查 AI 配置'}`,
           domain_mapping: {
             domain_id: question.domain,
             domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
             sub_topic: '',
           },
-          cbk_reference: '',
-          manager_perspective: '',
+          option_briefs: [],
+          cissp_knowledge_point: '',
           key_highlights: question.keywords || [],
-          correct_reasoning: '',
-          wrong_reasoning: '',
         });
       }
     } catch (err: any) {
       setAiExplanation({
-        deep_analysis: `AI 连接失败: ${err.message || '请检查网络'}`,
+        quick_takeaway: `AI 连接失败: ${err.message || '请检查网络'}`,
         domain_mapping: {
           domain_id: question.domain,
           domain_name: CISSP_DOMAINS.find((d) => d.id === question.domain)?.name || '',
           sub_topic: '',
         },
-        cbk_reference: '',
-        manager_perspective: '',
+        option_briefs: [],
+        cissp_knowledge_point: '',
         key_highlights: [],
-        correct_reasoning: '',
-        wrong_reasoning: '',
       });
     } finally {
       setIsAiLoading(false);

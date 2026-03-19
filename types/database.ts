@@ -57,17 +57,25 @@ export interface WrongQuestion {
 
 // AI 解析结果
 export interface AIExplanation {
-  deep_analysis: string;
-  domain_mapping: {
+  ai_answer?: string;
+  quick_takeaway?: string;
+  option_briefs?: Array<{
+    option: string;
+    verdict: 'correct' | 'incorrect';
+    reason: string;
+  }>;
+  cissp_knowledge_point?: string;
+  deep_analysis?: string; // 兼容旧数据
+  domain_mapping?: {
     domain_id: DomainId;
     domain_name: string;
     sub_topic: string;
   };
-  cbk_reference: string;
-  manager_perspective: string; // 管理思维视角
-  key_highlights: string[]; // 题眼关键词
-  correct_reasoning: string;
-  wrong_reasoning: string;
+  cbk_reference?: string; // 兼容旧数据
+  manager_perspective?: string; // 兼容旧数据
+  key_highlights?: string[]; // 题眼关键词
+  correct_reasoning?: string; // 兼容旧数据
+  wrong_reasoning?: string; // 兼容旧数据
 }
 
 // 域掌握进度
