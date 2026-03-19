@@ -25,12 +25,12 @@ export default function DomainRadarChart({ data }: DomainRadarChartProps) {
   }));
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-6">
+    <div className="w-full min-w-0 bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-4 sm:p-6">
       <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4">
         📊 八大知识域掌握雷达
       </h3>
 
-      <div className="h-80">
+      <div className="h-72 sm:h-80">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="75%" data={chartData}>
             <PolarGrid
@@ -80,15 +80,16 @@ export default function DomainRadarChart({ data }: DomainRadarChartProps) {
         {data.map((d) => (
           <div
             key={d.domain_id}
-            className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800"
+            className="flex items-center gap-2 text-xs px-2 sm:px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 min-w-0"
           >
-            <span className="text-gray-600 dark:text-gray-400">
+            <span className="text-gray-600 dark:text-gray-400 min-w-0 truncate">
               <span className="font-bold text-indigo-600 dark:text-indigo-400 mr-1">
                 D{d.domain_id}
               </span>
               {d.domain_name_zh}
             </span>
-            <span
+            <span className="ml-auto flex-shrink-0">
+              <span
               className={
                 d.accuracy >= 70
                   ? 'text-green-600 font-bold'
@@ -98,6 +99,7 @@ export default function DomainRadarChart({ data }: DomainRadarChartProps) {
               }
             >
               {d.accuracy}%
+            </span>
             </span>
           </div>
         ))}

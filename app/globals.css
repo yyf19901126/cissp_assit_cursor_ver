@@ -21,6 +21,12 @@ body {
     'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

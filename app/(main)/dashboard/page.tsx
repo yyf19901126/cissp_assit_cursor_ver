@@ -20,6 +20,8 @@ import {
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 
+const DASHBOARD_CACHE_KEY = 'dashboard_progress_cache_v1';
+
 // 初始空数据
 const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
   domain_id: d.id as any,
@@ -33,7 +35,7 @@ const emptyDomainProgress: DomainProgress[] = CISSP_DOMAINS.map((d) => ({
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const [domainProgress, setDomainProgress] = useState<DomainProgress[]>(emptyDomainProgress);
   const [overallStats, setOverallStats] = useState({
     total_questions: 0,
@@ -41,12 +43,14 @@ export default function DashboardPage() {
     total_correct: 0,
     accuracy: 0,
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchProgress = useCallback(async () => {
     setError(null);
-    setIsLoading(true);
+    setIsRefreshing(true);
     try {
       // 添加时间戳参数强制绕过 Vercel 边缘缓存
       const timestamp = Date.now();
@@ -68,6 +72,22 @@ export default function DashboardPage() {
         if (data.overall) {
           setOverallStats(data.overall);
         }
+        setHasFetchedOnce(true);
+        const updatedAt = Date.now();
+        setLastUpdatedAt(updatedAt);
+        // 缓存当前进度，避免下次进入页面先看到阻塞加载
+        try {
+          sessionStorage.setItem(
+            DASHBOARD_CACHE_KEY,
+            JSON.stringify({
+              domains: data.domains || [],
+              overall: data.overall || {},
+              updatedAt,
+            })
+          );
+        } catch {
+          // 忽略缓存写入失败
+        }
       } else if (res.status === 401) {
         console.log('[Dashboard] 401 - redirecting to login');
         setError('未登录，请重新登录');
@@ -82,13 +102,34 @@ export default function DashboardPage() {
       console.error('[Dashboard] Fetch error:', err);
       setError('网络错误，请稍后重试');
     } finally {
-      setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [router]);
 
-  // 当认证完成时获取数据（不依赖 user 对象，因为 API 从 cookie 读取）
+  // 当认证完成时：先回填缓存，再后台刷新最新数据
   useEffect(() => {
     if (!authLoading) {
+      try {
+        const cached = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed.domains)) {
+            setDomainProgress(parsed.domains);
+          }
+          if (parsed.overall && typeof parsed.overall === 'object') {
+            setOverallStats((prev) => ({
+              ...prev,
+              ...parsed.overall,
+            }));
+          }
+          if (typeof parsed.updatedAt === 'number') {
+            setLastUpdatedAt(parsed.updatedAt);
+          }
+          setHasFetchedOnce(true);
+        }
+      } catch {
+        // 忽略缓存读取失败，继续拉取线上数据
+      }
       fetchProgress();
     }
   }, [authLoading, fetchProgress]);
@@ -110,19 +151,8 @@ export default function DashboardPage() {
     .sort((a, b) => a.accuracy - b.accuracy)
     .slice(0, 3);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-indigo-500" size={40} />
-          <p className="text-gray-500">加载学习进度...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
+    <div className="w-full min-w-0 max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
       {/* 欢迎头部 */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
@@ -132,14 +162,25 @@ export default function DashboardPage() {
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
             跟踪你的 CISSP 复习进度，找到薄弱环节，针对性突破
           </p>
+          {isRefreshing && (
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 flex items-center gap-1.5">
+              <Loader2 size={14} className="animate-spin" />
+              正在同步最新学习进度...
+            </p>
+          )}
+          {!isRefreshing && lastUpdatedAt && (
+            <p className="text-xs text-gray-400 mt-2">
+              最近更新：{new Date(lastUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+            </p>
+          )}
         </div>
         <button
           onClick={fetchProgress}
-          disabled={isLoading}
+          disabled={isRefreshing}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
           title="刷新数据"
         >
-          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
           <span className="text-sm font-medium">刷新</span>
         </button>
       </div>
@@ -158,7 +199,7 @@ export default function DashboardPage() {
       )}
 
       {/* 题库为空提示 */}
-      {!error && overallStats.total_questions === 0 && (
+      {!error && hasFetchedOnce && !isRefreshing && overallStats.total_questions === 0 && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-amber-200 dark:border-amber-800 p-8 text-center">
           <Database size={48} className="mx-auto text-amber-500 mb-4" />
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-2">
@@ -340,8 +381,8 @@ export default function DashboardPage() {
         <h3 className="text-base sm:text-lg font-bold text-gray-800 dark:text-gray-200 mb-4">
           📋 八大知识域详情
         </h3>
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px] sm:min-w-full align-middle">
             <table className="w-full text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700">
