@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
         .from('questions')
         .select('*')
         .eq('id', currentQuestionId)
+        .eq('is_available', true)
         .single();
 
       return NextResponse.json({
@@ -65,7 +66,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. 构建查询（突破 1000 行限制）
-    let query = supabase.from('questions').select('*').range(0, 9999);
+    let query = supabase
+      .from('questions')
+      .select('*')
+      .eq('is_available', true)
+      .range(0, 9999);
 
     // 按域筛选
     if (domain) {

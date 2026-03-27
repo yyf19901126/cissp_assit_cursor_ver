@@ -14,6 +14,7 @@ import {
   User,
   Menu,
   X,
+  Ban,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,7 +28,7 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // 移动端：点击链接后自动关闭菜单
@@ -110,6 +111,20 @@ export default function Sidebar() {
             </Link>
           );
         })}
+        {isAdmin && (
+          <Link
+            href="/unavailable-questions"
+            className={clsx(
+              'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+              pathname === '/unavailable-questions'
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            )}
+          >
+            <Ban size={20} />
+            已停用题目
+          </Link>
+        )}
       </nav>
 
       {/* 底部：用户信息 */}

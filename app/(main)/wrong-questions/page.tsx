@@ -14,7 +14,9 @@ import {
   Loader2,
   Inbox,
   RefreshCw,
+  Wrench,
 } from 'lucide-react';
+import QuestionRepairAssistant from '@/components/QuestionRepairAssistant';
 import clsx from 'clsx';
 
 interface WrongQuestionItem {
@@ -28,13 +30,14 @@ interface WrongQuestionItem {
 
 export default function WrongQuestionsPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin, aiSettings } = useAuth();
   const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<number | null>(null);
   const [showMastered, setShowMastered] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [repairTarget, setRepairTarget] = useState<Question | null>(null);
 
   const fetchWrongQuestions = useCallback(async () => {
     setFetchError(null);
@@ -361,12 +364,44 @@ export default function WrongQuestionsPage() {
                       )?.text}
                     </p>
                   </div>
+
+                  {isAdmin && (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setRepairTarget(wq.question)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600"
+                      >
+                        <Wrench size={16} />
+                        题目修复助手
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ))
         )}
       </div>
+
+      <QuestionRepairAssistant
+        open={!!repairTarget}
+        question={repairTarget}
+        onClose={() => setRepairTarget(null)}
+        onSaved={(updated) => {
+          if (updated.is_available === false) {
+            setWrongQuestions((prev) => prev.filter((w) => w.question.id !== updated.id));
+          } else {
+            setWrongQuestions((prev) =>
+              prev.map((w) =>
+                w.question.id === updated.id ? { ...w, question: updated } : w
+              )
+            );
+          }
+          setRepairTarget(null);
+        }}
+        aiSettings={aiSettings}
+      />
     </div>
   );
 }

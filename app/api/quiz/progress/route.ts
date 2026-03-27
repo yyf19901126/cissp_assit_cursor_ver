@@ -65,7 +65,8 @@ export async function GET(request: NextRequest) {
     // 先查总数
     const { count: overallCount, error: countError } = await supabase
       .from('questions')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('is_available', true);
 
     if (countError) {
       console.error('Error counting questions:', countError);
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
       const { count, error } = await supabase
         .from('questions')
         .select('*', { count: 'exact', head: true })
+        .eq('is_available', true)
         .eq('domain', d.id);
 
       if (error) {
@@ -158,30 +160,38 @@ export async function GET(request: NextRequest) {
       console.log('[Progress API] Unique question_ids:', questionIds.length);
       
       // 3. 批量查询 questions 获取 domain（分批查询，避免 in() 参数过多）
-      let questionMap = new Map<string, number | null>();
+      type QMeta = { domain: number | null; available: boolean };
+      let questionMap = new Map<string, QMeta>();
       const BATCH_SIZE = 100;
       for (let i = 0; i < questionIds.length; i += BATCH_SIZE) {
         const batch = questionIds.slice(i, i + BATCH_SIZE);
         const { data: questionsData, error: questionsError } = await supabase
           .from('questions')
-          .select('id, domain')
+          .select('id, domain, is_available')
           .in('id', batch);
         
         if (questionsError) {
           console.error(`[Progress] Error fetching questions batch ${i}-${i+BATCH_SIZE}:`, questionsError);
         } else if (questionsData) {
-          questionsData.forEach((q) => questionMap.set(q.id, q.domain));
+          questionsData.forEach((q: any) => {
+            questionMap.set(q.id, {
+              domain: q.domain,
+              available: q.is_available !== false,
+            });
+          });
         }
       }
       
       console.log('[Progress API] Questions mapped:', questionMap.size, 'out of', questionIds.length);
       
-      // 4. 在内存中合并数据
-      progressData = progressRecords.map((r) => ({
-        question_id: r.question_id,
-        is_correct: r.is_correct,
-        questions: { domain: questionMap.get(r.question_id) ?? null },
-      }));
+      // 4. 在内存中合并数据（已停用题目不计入进度统计）
+      progressData = progressRecords
+        .filter((r) => questionMap.get(r.question_id)?.available)
+        .map((r) => ({
+          question_id: r.question_id,
+          is_correct: r.is_correct,
+          questions: { domain: questionMap.get(r.question_id)?.domain ?? null },
+        }));
       
       console.log('[Progress API] Final progressData length:', progressData.length);
       console.log('[Progress API] Correct count:', progressData.filter((p) => p.is_correct).length);

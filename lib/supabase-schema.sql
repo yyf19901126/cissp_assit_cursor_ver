@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS questions (
   correct_answer VARCHAR(1) NOT NULL CHECK (correct_answer IN ('A','B','C','D')),
   base_explanation TEXT DEFAULT '',
   keywords TEXT[] DEFAULT '{}',
+  is_available BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

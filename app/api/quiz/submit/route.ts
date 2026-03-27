@@ -33,13 +33,17 @@ export async function POST(request: NextRequest) {
     // ═══════════════ 获取正确答案 ═══════════════
     const { data: question, error: qError } = await supabase
       .from('questions')
-      .select('correct_answer, base_explanation, keywords')
+      .select('correct_answer, base_explanation, keywords, is_available')
       .eq('id', question_id)
       .single();
 
     if (qError || !question) {
       console.error('[Submit] Question not found:', question_id, qError);
       return NextResponse.json({ error: '题目不存在' }, { status: 404 });
+    }
+
+    if (question.is_available === false) {
+      return NextResponse.json({ error: '该题已停用，无法提交答案' }, { status: 410 });
     }
 
     const isCorrect = user_answer.toUpperCase() === question.correct_answer.toUpperCase();

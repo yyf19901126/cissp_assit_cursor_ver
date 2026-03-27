@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import QuestionCard from '@/components/QuestionCard';
+import QuestionRepairAssistant from '@/components/QuestionRepairAssistant';
 import NavigationMatrix from '@/components/NavigationMatrix';
 import AIExplanationPanel from '@/components/AIExplanation';
 import TermLookup from '@/components/TermLookup';
@@ -37,7 +38,7 @@ type QuizMode = 'practice' | 'exam' | 'sequential';
 function QuizContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, aiSettings } = useAuth();
+  const { user, aiSettings, isAdmin } = useAuth();
 
   const modeParam = searchParams.get('mode') || 'practice';
   const domainParam = searchParams.get('domain');
@@ -78,6 +79,7 @@ function QuizContent() {
   const [sequentialCorrectNumbers, setSequentialCorrectNumbers] = useState<Set<number>>(new Set()); // 答对的题号
   const [sequentialWrongNumbers, setSequentialWrongNumbers] = useState<Set<number>>(new Set()); // 答错的题号
   const [isLoadingQuestionByNumber, setIsLoadingQuestionByNumber] = useState(false);
+  const [repairTarget, setRepairTarget] = useState<Question | null>(null);
 
   // 加载顺序刷题进度（从数据库）
   useEffect(() => {
@@ -525,6 +527,36 @@ function QuizContent() {
     }
   };
 
+  const handleRepairSaved = useCallback(
+    (updated: Question, meta?: { total_available: number | null }) => {
+      if (meta?.total_available != null) {
+        setSequentialGrandTotal(meta.total_available);
+      }
+      setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+      setSequentialQuestionMap((prev) => {
+        const next = new Map(prev);
+        if (updated.is_available === false) {
+          next.delete(updated.question_number);
+        } else {
+          next.set(updated.question_number, updated);
+        }
+        return next;
+      });
+      if (updated.is_available === false) {
+        setSequentialLoadedNumbers((prev) => {
+          const s = new Set(prev);
+          s.delete(updated.question_number);
+          return s;
+        });
+        if (mode === 'sequential' && sequentialCurrentQuestionNumber === updated.question_number) {
+          setQuestions([]);
+        }
+      }
+      setRepairTarget(null);
+    },
+    [mode, sequentialCurrentQuestionNumber]
+  );
+
   // ═══════════════════ 顺序模式：按题号加载题目（按需加载） ═══════════════════
   const loadQuestionByNumber = useCallback(async (questionNumber: number) => {
     if (questionNumber < 1 || questionNumber > sequentialGrandTotal) {
@@ -563,10 +595,19 @@ function QuizContent() {
           setSequentialQuestionMap(newMap);
           setSequentialLoadedNumbers(newLoaded);
 
-          // 设置当前题目
-          const targetQuestion = newMap.get(questionNumber);
+          // 设置当前题目：若目标题号已停用，自动跳到最近可用题
+          const targetQuestion =
+            newMap.get(questionNumber) ||
+            data.questions.find((q: Question) => q.question_number >= questionNumber) ||
+            [...data.questions].reverse().find((q: Question) => q.question_number < questionNumber);
           if (targetQuestion) {
             setQuestions([targetQuestion]);
+            setCurrentIndex(0);
+            if (targetQuestion.question_number !== questionNumber) {
+              setSequentialCurrentQuestionNumber(targetQuestion.question_number);
+            }
+          } else {
+            setQuestions([]);
             setCurrentIndex(0);
           }
         }
@@ -1029,6 +1070,15 @@ function QuizContent() {
             </div>
           )}
 
+          {mode === 'sequential' &&
+            !isLoadingQuestionByNumber &&
+            !currentQuestion &&
+            isStarted && (
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
+                第 {sequentialCurrentQuestionNumber} 题不在可用题库中（可能已停用或尚未加载）。请使用「上一题 / 下一题」切换，或联系管理员在「已停用题目」中恢复。
+              </div>
+            )}
+
           {currentQuestion && (
             <QuestionCard
               key={currentQuestion.id}
@@ -1042,6 +1092,8 @@ function QuizContent() {
               result={results[currentQuestion.id] || null}
               showResult={mode !== 'exam' && !!results[currentQuestion.id]}
               savedAnswer={answers[currentQuestion.id] || undefined}
+              canRepair={isAdmin}
+              onOpenRepair={() => setRepairTarget(currentQuestion)}
             />
           )}
 
@@ -1168,6 +1220,14 @@ function QuizContent() {
           <TermLookup />
         </div>
       </div>
+
+      <QuestionRepairAssistant
+        open={!!repairTarget}
+        question={repairTarget}
+        onClose={() => setRepairTarget(null)}
+        onSaved={handleRepairSaved}
+        aiSettings={aiSettings}
+      />
     </div>
   );
 }

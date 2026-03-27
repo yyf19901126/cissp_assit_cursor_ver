@@ -28,6 +28,8 @@ export interface Question {
   correct_answer: string; // A, B, C, D
   base_explanation: string;
   keywords: string[]; // 题眼高亮词
+  /** false 时不出现在任何练习模式，仍保留在库中 */
+  is_available?: boolean;
   created_at: string;
 }
 

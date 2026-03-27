@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
       const { data: wrongQuestions, error: wrongQError } = await supabase
         .from('questions')
         .select('id, question_number')
-        .in('id', wrong_question_ids);
+        .in('id', wrong_question_ids)
+        .eq('is_available', true);
 
       if (wrongQError) {
         console.error('Error fetching wrong questions:', wrongQError);
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
       const { count: totalCount, error: countError } = await supabase
         .from('questions')
         .select('*', { count: 'exact', head: true })
+        .eq('is_available', true)
         .order('question_number', { ascending: true });
 
       if (countError) {
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
       let query = supabase
         .from('questions')
         .select('id, question_number')
+        .eq('is_available', true)
         .order('question_number', { ascending: true });
 
       if (startFrom > 0) {
@@ -156,7 +159,11 @@ export async function POST(request: NextRequest) {
 
     // ═══════════════════ 练习/考试模式：随机选择题目 ═══════════════════
     // 构建查询
-    let query = supabase.from('questions').select('id, question_number').range(0, 9999);
+    let query = supabase
+      .from('questions')
+      .select('id, question_number')
+      .eq('is_available', true)
+      .range(0, 9999);
 
     // 域筛选：优先使用 domains 数组，否则使用 domain 单值
     const domainFilter: number[] = domains && domains.length > 0

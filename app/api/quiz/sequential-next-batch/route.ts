@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     const { data: batchQuestions, error } = await supabase
       .from('questions')
       .select('id, question_number')
+      .eq('is_available', true)
       .gt('question_number', start_from)
       .order('question_number', { ascending: true })
       .limit(BATCH_SIZE);
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
     const { data: questionsData, error: questionsError } = await supabase
       .from('questions')
       .select('*')
+      .eq('is_available', true)
       .in('id', questionIds)
       .order('question_number', { ascending: true });
 

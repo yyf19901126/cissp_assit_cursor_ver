@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       const batch = questionIds.slice(i, i + 1000);
       const { data: questions, error } = await supabase
         .from('questions')
-        .select('id, question_number')
+        .select('id, question_number, is_available')
         .in('id', batch);
 
       if (error) {
@@ -68,7 +68,10 @@ export async function GET(request: NextRequest) {
         continue;
       }
       if (questions) {
-        allQuestions = [...allQuestions, ...questions];
+        allQuestions = [
+          ...allQuestions,
+          ...questions.filter((q: any) => q.is_available !== false),
+        ];
       }
     }
 

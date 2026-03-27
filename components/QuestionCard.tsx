@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Question } from '@/types/database';
-import { CheckCircle, XCircle, Lightbulb } from 'lucide-react';
+import { CheckCircle, XCircle, Lightbulb, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 
 interface QuestionCardProps {
@@ -21,6 +21,9 @@ interface QuestionCardProps {
   } | null;
   showResult: boolean;
   savedAnswer?: string; // 已保存的答案（回退到此题时恢复选中状态）
+  /** 管理员：打开题目修复助手 */
+  canRepair?: boolean;
+  onOpenRepair?: () => void;
 }
 
 // 高亮题眼关键词
@@ -62,6 +65,8 @@ export default function QuestionCard({
   result,
   showResult,
   savedAnswer,
+  canRepair,
+  onOpenRepair,
 }: QuestionCardProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(savedAnswer || null);
   const [isSubmitted, setIsSubmitted] = useState(!!savedAnswer);
@@ -144,6 +149,19 @@ export default function QuestionCard({
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 leading-relaxed mb-4 sm:mb-6">
           {highlightKeywords(question.question_text, allKeywords)}
         </h2>
+
+        {canRepair && onOpenRepair && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={onOpenRepair}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 transition-colors"
+            >
+              <Wrench size={16} className="sm:w-[18px] sm:h-[18px]" />
+              题目修复助手
+            </button>
+          </div>
+        )}
 
         {/* 选项 */}
         <div className="space-y-2 sm:space-y-3">

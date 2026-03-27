@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     // 3. 批量查询 questions 表
     const { data: questionsData, error: questionsError } = await supabase
       .from('questions')
-      .select('id, question_number, domain, question_text, options, correct_answer, base_explanation, keywords')
+      .select('id, question_number, domain, question_text, options, correct_answer, base_explanation, keywords, is_available')
       .in('id', questionIds);
 
     if (questionsError) {
@@ -174,7 +174,9 @@ export async function GET(request: NextRequest) {
       unmastered_count: Object.values(grouped).filter((q: any) => !q.is_mastered).length,
     });
 
-    const questions = Object.values(grouped);
+    const questions = Object.values(grouped).filter(
+      (q: any) => q.question && q.question.is_available !== false
+    );
 
     const response = NextResponse.json({
       questions,

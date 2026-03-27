@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
     const { data: questions, error } = await supabase
       .from('questions')
       .select('*')
-      .in('id', question_ids);
+      .in('id', question_ids)
+      .eq('is_available', true);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

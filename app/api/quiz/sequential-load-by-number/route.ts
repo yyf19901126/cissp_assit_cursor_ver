@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     const { data: questions, error } = await supabase
       .from('questions')
       .select('*')
+      .eq('is_available', true)
       .gte('question_number', batchStart)
       .lte('question_number', batchEnd)
       .order('question_number', { ascending: true });

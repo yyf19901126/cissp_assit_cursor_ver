@@ -23,10 +23,11 @@ export async function POST(request: NextRequest) {
       .from('questions')
       .select('*')
       .eq('id', question_id)
+      .eq('is_available', true)
       .single();
 
     if (error || !question) {
-      return NextResponse.json({ error: '题目不存在' }, { status: 404 });
+      return NextResponse.json({ error: '题目不存在或已停用' }, { status: 404 });
     }
 
     // 使用动态 AI 配置或环境变量
