@@ -44,6 +44,7 @@ type Token = {
   x: number;
   y: number;
   bold: boolean;
+  width: number;
 };
 
 type Line = {
@@ -82,6 +83,7 @@ function buildLinesFromPage(textContent: any): Line[] {
     if (!text) continue;
     const x = Array.isArray(t.transform) ? Number(t.transform[4] || 0) : 0;
     const y = Array.isArray(t.transform) ? Number(t.transform[5] || 0) : 0;
+    const width = Number((t as any).width || 0);
     const fontName = String(t.fontName || '');
     const styleFont = String(styles?.[fontName]?.fontFamily || '');
     const bold = looksLikeBold(fontName, styleFont);
@@ -100,7 +102,7 @@ function buildLinesFromPage(textContent: any): Line[] {
       lines.push(target);
     }
 
-    target.tokens.push({ text, x, y, bold });
+    target.tokens.push({ text, x, y, bold, width });
     if (x < target.indent) target.indent = x;
   }
 
@@ -145,9 +147,33 @@ function extractEntryFromLines(lines: Line[]): ExtractedTermEntry[] {
       }
     }
 
-    const termCandidate = normalizeSpaces(leadingBold.map((t) => t.text).join(' '));
+    let splitIndex = -1;
+    if (leadingBold.length > 0) {
+      splitIndex = leadingBold.length;
+    } else if (line.tokens.length >= 2) {
+      // 若拿不到粗体信息，退化为“列间距”切分（glossary 通常 term 与 definition 之间空隙明显）
+      let bestGap = 0;
+      let bestIdx = -1;
+      for (let i = 0; i < line.tokens.length - 1; i++) {
+        const cur = line.tokens[i];
+        const nxt = line.tokens[i + 1];
+        const right = cur.x + Math.max(0, cur.width);
+        const gap = nxt.x - right;
+        if (gap > bestGap) {
+          bestGap = gap;
+          bestIdx = i + 1;
+        }
+      }
+      if (bestGap >= 8 && bestIdx > 0 && bestIdx <= 10) {
+        splitIndex = bestIdx;
+      }
+    }
+
+    const termCandidate = normalizeSpaces(
+      (splitIndex > 0 ? line.tokens.slice(0, splitIndex) : []).map((t) => t.text).join(' ')
+    );
     const restTokens =
-      leadingBold.length > 0 ? line.tokens.slice(leadingBold.length) : line.tokens;
+      splitIndex > 0 ? line.tokens.slice(splitIndex) : line.tokens;
     const restText = normalizeSpaces(restTokens.map((t) => t.text).join(' '));
 
     const termWordCount = termCandidate ? termCandidate.split(/\s+/).length : 0;
@@ -197,6 +223,87 @@ function extractEntryFromLines(lines: Line[]): ExtractedTermEntry[] {
   return [...map.values()];
 }
 
+function parseEntriesFromFlatText(fullText: string): ExtractedTermEntry[] {
+  const lines = fullText
+    .split('\n')
+    .map((l) => l.replace(/\s+$/g, ''))
+    .filter((l) => l.trim().length > 0);
+
+  const entries: ExtractedTermEntry[] = [];
+  let currentTerm = '';
+  let currentDef = '';
+  let pendingStandaloneTerm = '';
+
+  const pushCurrent = () => {
+    const term = normalizeSpaces(currentTerm);
+    const def = normalizeSpaces(currentDef);
+    if (!term || !def) return;
+    if (term.length < 2 || term.length > 120) return;
+    if (def.length < 8) return;
+    entries.push({
+      term_name: term,
+      official_definition: def,
+      domain_number: guessDomain(term, def),
+    });
+  };
+
+  for (const line of lines) {
+    const raw = line;
+    const trimmed = normalizeSpaces(raw);
+    if (isNoiseLineText(trimmed)) continue;
+
+    const m = raw.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,140}?)\s{2,}(.+)$/);
+    if (m) {
+      pushCurrent();
+      currentTerm = m[1].trim();
+      currentDef = m[2].trim();
+      pendingStandaloneTerm = '';
+      continue;
+    }
+
+    const singleGap = trimmed.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,120})\s([A-Z].{8,})$/);
+    if (singleGap && !singleGap[1].includes('.') && singleGap[1].length <= 90) {
+      pushCurrent();
+      currentTerm = singleGap[1].trim();
+      currentDef = singleGap[2].trim();
+      pendingStandaloneTerm = '';
+      continue;
+    }
+
+    const looksLikeTermOnly =
+      !trimmed.includes('.') &&
+      !trimmed.includes('?') &&
+      trimmed.length >= 2 &&
+      trimmed.length <= 90 &&
+      /^[A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]+$/.test(trimmed);
+
+    if (looksLikeTermOnly) {
+      pendingStandaloneTerm = trimmed;
+      continue;
+    }
+
+    if (pendingStandaloneTerm && trimmed.length >= 8) {
+      currentTerm = pendingStandaloneTerm;
+      currentDef = trimmed;
+      pendingStandaloneTerm = '';
+      continue;
+    }
+
+    if (currentDef) {
+      currentDef += ` ${trimmed}`;
+    }
+  }
+
+  pushCurrent();
+
+  const uniq = new Map<string, ExtractedTermEntry>();
+  for (const e of entries) {
+    const key = e.term_name.toLowerCase().trim().replace(/\s+/g, ' ');
+    if (!uniq.has(key)) uniq.set(key, e);
+  }
+  return [...uniq.values()];
+}
+
 export async function extractTermsFromPDF(
   file: File,
   onProgress?: (msg: string) => void
@@ -214,6 +321,7 @@ export async function extractTermsFromPDF(
 
   const totalPages = doc.numPages;
   let allEntries: ExtractedTermEntry[] = [];
+  let flatText = '';
   for (let i = 1; i <= totalPages; i++) {
     if (i % 20 === 0 || i === totalPages) {
       onProgress?.(`正在提取文本 (${i}/${totalPages} 页)...`);
@@ -223,6 +331,14 @@ export async function extractTermsFromPDF(
     const lines = buildLinesFromPage(textContent as any);
     const pageEntries = extractEntryFromLines(lines);
     allEntries = [...allEntries, ...pageEntries];
+
+    const pageText = (textContent.items || [])
+      .map((item: any) => {
+        const str = String(item?.str || '');
+        return item?.hasEOL ? `${str}\n` : `${str} `;
+      })
+      .join('');
+    flatText += `${pageText}\n`;
   }
 
   onProgress?.('正在识别术语与定义...');
@@ -232,7 +348,14 @@ export async function extractTermsFromPDF(
     const key = e.term_name.toLowerCase().trim().replace(/\s+/g, ' ');
     if (!uniq.has(key)) uniq.set(key, e);
   }
-  const entries = [...uniq.values()];
+  let entries = [...uniq.values()];
+  if (entries.length < 20) {
+    // 兜底：若版式识别过少，回退到纯文本规则，避免出现 0 条
+    const fallback = parseEntriesFromFlatText(flatText);
+    if (fallback.length > entries.length) {
+      entries = fallback;
+    }
+  }
   onProgress?.(`识别到 ${entries.length} 条术语`);
 
   return { totalPages, entries };
