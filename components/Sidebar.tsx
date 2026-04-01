@@ -8,6 +8,7 @@ import {
   BookOpen,
   AlertTriangle,
   Settings,
+  LibraryBig,
   Shield,
   LogOut,
   Crown,
@@ -22,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 const navItems = [
   { href: '/dashboard', label: '学习总览', icon: LayoutDashboard },
   { href: '/quiz', label: '开始答题', icon: BookOpen },
+  { href: '/knowledge-base', label: '复习知识库', icon: LibraryBig },
   { href: '/wrong-questions', label: '错题本', icon: AlertTriangle },
   { href: '/settings', label: '设置', icon: Settings },
 ];

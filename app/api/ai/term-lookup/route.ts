@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIClient, getModelName, DynamicAIConfig } from '@/lib/openai';
+import { createServiceClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,30 @@ export async function POST(request: NextRequest) {
 
     if (!term || term.trim().length === 0) {
       return NextResponse.json({ error: '请输入要查询的术语' }, { status: 400 });
+    }
+
+    // 优先查本地知识库，命中则直接返回，减少 API 调用时延
+    const supabase = createServiceClient();
+    const keyword = term.trim();
+    const { data: kbRows } = await supabase
+      .from('knowledge_terms')
+      .select('*')
+      .or(`term_name.ilike.%${keyword}%,official_definition.ilike.%${keyword}%`)
+      .limit(1);
+
+    if (kbRows && kbRows.length > 0) {
+      const row: any = kbRows[0];
+      return NextResponse.json({
+        result: {
+          term_original: keyword,
+          term_chinese: row.term_name,
+          full_name: Array.isArray(row.aka_synonyms) ? row.aka_synonyms.join(', ') : '',
+          explanation: row.official_definition,
+          security_role: row.concept_logic || '',
+          related_domain: row.domain_number ? String(row.domain_number) : '',
+        },
+        model_used: 'knowledge_base',
+      });
     }
 
     const aiConfigTyped: DynamicAIConfig | undefined = ai_config;

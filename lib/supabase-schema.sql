@@ -76,15 +76,59 @@ CREATE INDEX IF NOT EXISTS idx_user_progress_question ON user_progress(question_
 CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sequential_progress_user ON sequential_progress(user_id);
 
+-- 5. CISSP 知识库来源表
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  source_name TEXT NOT NULL,
+  source_version TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_sha256 TEXT NOT NULL UNIQUE,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. CISSP 知识库术语表
+CREATE TABLE IF NOT EXISTS knowledge_terms (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  term_name TEXT NOT NULL,
+  term_key TEXT NOT NULL UNIQUE,
+  official_definition TEXT NOT NULL,
+  domain_number SMALLINT NOT NULL CHECK (domain_number BETWEEN 1 AND 8),
+  concept_logic TEXT DEFAULT '',
+  aka_synonyms TEXT[] DEFAULT '{}',
+  process_step TEXT DEFAULT '',
+  confusion_points TEXT DEFAULT '',
+  is_new_topic BOOLEAN DEFAULT FALSE,
+  mastery_level SMALLINT DEFAULT 0 CHECK (mastery_level BETWEEN 0 AND 5),
+  source_id UUID REFERENCES knowledge_sources(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_domain ON knowledge_terms(domain_number);
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_mastery ON knowledge_terms(mastery_level);
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_new_topic ON knowledge_terms(is_new_topic);
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_source ON knowledge_terms(source_id);
+
 -- RLS (行级安全) — 所有操作通过 service_role API 路由完成
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequential_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_terms ENABLE ROW LEVEL SECURITY;
 
 -- questions 表对所有人可读（包括 anon）
 CREATE POLICY "Questions are viewable by everyone" ON questions
+  FOR SELECT USING (true);
+
+CREATE POLICY "Knowledge sources are viewable by everyone" ON knowledge_sources
+  FOR SELECT USING (true);
+
+CREATE POLICY "Knowledge terms are viewable by everyone" ON knowledge_terms
   FOR SELECT USING (true);
 
 -- 其他表不设 anon 策略，仅 service_role 可访问

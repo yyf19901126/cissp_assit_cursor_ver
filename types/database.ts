@@ -124,3 +124,33 @@ export interface ParseProgress {
   status: 'idle' | 'parsing' | 'completed' | 'error';
   errors: Array<{ index: number; error: string }>;
 }
+
+// 知识库来源
+export interface KnowledgeSource {
+  id: string;
+  source_name: string;
+  source_version: string;
+  file_name: string;
+  file_sha256: string;
+  page_count: number;
+  uploaded_by?: string | null;
+  uploaded_at: string;
+}
+
+// CISSP 术语知识库
+export interface KnowledgeTerm {
+  id: string;
+  term_name: string;
+  term_key: string;
+  official_definition: string;
+  domain_number: DomainId;
+  concept_logic: string;
+  aka_synonyms: string[];
+  process_step: string;
+  confusion_points: string;
+  is_new_topic: boolean;
+  mastery_level: 0 | 1 | 2 | 3 | 4 | 5;
+  source_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
