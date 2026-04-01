@@ -40,18 +40,32 @@ function guessDomain(term: string, definition: string): number {
 }
 
 function parseEntriesFromText(fullText: string): ExtractedTermEntry[] {
-  const lines = fullText
-    .split('\n')
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+  const rawLines = fullText.split('\n');
+  const lines = rawLines
+    .map((l) => l.replace(/\s+$/g, ''))
+    .filter((l) => l.trim().length > 0);
 
   const entries: ExtractedTermEntry[] = [];
   let currentTerm = '';
   let currentDef = '';
+  let pendingTermOnly = '';
+
+  const isNoiseLine = (line: string) => {
+    const t = line.trim();
+    if (!t) return true;
+    if (/^glossary$/i.test(t)) return true;
+    if (/^numbers and symbols$/i.test(t)) return true;
+    if (/^some terms in this glossary/i.test(t)) return true;
+    if (/^\d+\s+glossary$/i.test(t)) return true;
+    if (/^\d+$/.test(t)) return true; // 页码
+    return false;
+  };
+
+  const normalizeSpaces = (s: string) => s.replace(/\s+/g, ' ').trim();
 
   const pushCurrent = () => {
-    const term = currentTerm.trim();
-    const def = currentDef.trim();
+    const term = normalizeSpaces(currentTerm);
+    const def = normalizeSpaces(currentDef);
     if (!term || !def) return;
     if (term.length < 2 || term.length > 120) return;
     if (def.length < 8) return;
@@ -63,18 +77,58 @@ function parseEntriesFromText(fullText: string): ExtractedTermEntry[] {
   };
 
   for (const line of lines) {
+    if (isNoiseLine(line)) continue;
+
+    const raw = line;
+    const trimmed = normalizeSpaces(raw);
+
     // 词典格式常见：<term><2+ spaces><definition>
-    const m = line.match(/^([A-Za-z0-9][A-Za-z0-9\s\-\/(),.'"]{1,120}?)\s{2,}(.+)$/);
+    const m = raw.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,140}?)\s{2,}(.+)$/);
     if (m) {
       pushCurrent();
       currentTerm = m[1].trim();
       currentDef = m[2].trim();
+      pendingTermOnly = '';
+      continue;
+    }
+
+    // 兼容有些 PDF 被提取成 “term definition”（只有一个空格）
+    const singleGap = trimmed.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,120})\s([A-Z].{8,})$/);
+    if (singleGap) {
+      // term 候选尽量不含句号，避免把整句当 term
+      if (!singleGap[1].includes('.') && singleGap[1].length <= 90) {
+        pushCurrent();
+        currentTerm = singleGap[1].trim();
+        currentDef = singleGap[2].trim();
+        pendingTermOnly = '';
+        continue;
+      }
+    }
+
+    // 兼容 “term 单独一行，definition 下一行”的情况
+    const looksLikeTermOnly =
+      !trimmed.includes('.') &&
+      !trimmed.includes('?') &&
+      trimmed.length >= 2 &&
+      trimmed.length <= 90 &&
+      /^[A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]+$/.test(trimmed);
+
+    if (looksLikeTermOnly) {
+      pendingTermOnly = trimmed;
+      continue;
+    }
+
+    if (pendingTermOnly && trimmed.length >= 8) {
+      pushCurrent();
+      currentTerm = pendingTermOnly;
+      currentDef = trimmed;
+      pendingTermOnly = '';
       continue;
     }
 
     // continuation line
     if (currentDef) {
-      currentDef += ` ${line}`;
+      currentDef += ` ${trimmed}`;
     }
   }
 
