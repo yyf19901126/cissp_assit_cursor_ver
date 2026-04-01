@@ -53,6 +53,12 @@ type Line = {
   tokens: Token[];
 };
 
+const TERM_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'from', 'if',
+  'in', 'into', 'is', 'it', 'its', 'of', 'on', 'or', 'that', 'the', 'their',
+  'there', 'these', 'this', 'those', 'to', 'was', 'were', 'with',
+]);
+
 function normalizeSpaces(s: string) {
   return s.replace(/\s+/g, ' ').trim();
 }
@@ -71,6 +77,19 @@ function isNoiseLineText(text: string) {
 function looksLikeBold(fontName: string, styleFont: string) {
   const sample = `${fontName} ${styleFont}`.toLowerCase();
   return /bold|black|demi|heavy|semibold/.test(sample);
+}
+
+function isLikelyTerm(term: string, preferStrict = false) {
+  const t = normalizeSpaces(term);
+  if (!t) return false;
+  if (t.length < 2 || t.length > 90) return false;
+  if (/[.?!]$/.test(t)) return false;
+  const words = t.split(/\s+/);
+  if (words.length > (preferStrict ? 6 : 10)) return false;
+  const first = words[0].toLowerCase();
+  if (TERM_STOPWORDS.has(first)) return false;
+  if (!/[A-Za-z0-9*]/.test(t)) return false;
+  return true;
 }
 
 function buildLinesFromPage(textContent: any): Line[] {
@@ -118,6 +137,7 @@ function extractEntryFromLines(lines: Line[]): ExtractedTermEntry[] {
   let currentTerm = '';
   let currentDef = '';
   let pendingStandaloneTerm = '';
+  const minIndent = lines.reduce((m, l) => Math.min(m, l.indent), Number.MAX_VALUE);
 
   const pushCurrent = () => {
     const term = normalizeSpaces(currentTerm);
@@ -177,13 +197,15 @@ function extractEntryFromLines(lines: Line[]): ExtractedTermEntry[] {
     const restText = normalizeSpaces(restTokens.map((t) => t.text).join(' '));
 
     const termWordCount = termCandidate ? termCandidate.split(/\s+/).length : 0;
+    const fromBold = leadingBold.length > 0;
     const plausibleTerm =
-      termCandidate.length >= 2 &&
-      termCandidate.length <= 90 &&
-      termWordCount <= 10 &&
-      /[A-Za-z0-9]/.test(termCandidate);
+      isLikelyTerm(termCandidate, !fromBold) &&
+      termWordCount <= (fromBold ? 10 : 6);
 
-    if (plausibleTerm && leadingBold.length > 0) {
+    // gap 推断模式要求行必须接近最左列，避免把定义续行误判成新术语
+    const allowByIndent = fromBold || line.indent <= minIndent + 14;
+
+    if (plausibleTerm && splitIndex > 0 && allowByIndent) {
       pushCurrent();
       if (restText.length >= 6) {
         currentTerm = termCandidate;
@@ -199,7 +221,7 @@ function extractEntryFromLines(lines: Line[]): ExtractedTermEntry[] {
     }
 
     // 兼容 “term 单独一行，下一行开始定义”
-    if (pendingStandaloneTerm && lineText.length >= 8) {
+    if (pendingStandaloneTerm && lineText.length >= 8 && line.indent > minIndent + 6) {
       currentTerm = pendingStandaloneTerm;
       currentDef = lineText;
       pendingStandaloneTerm = '';
@@ -238,7 +260,7 @@ function parseEntriesFromFlatText(fullText: string): ExtractedTermEntry[] {
     const term = normalizeSpaces(currentTerm);
     const def = normalizeSpaces(currentDef);
     if (!term || !def) return;
-    if (term.length < 2 || term.length > 120) return;
+    if (!isLikelyTerm(term, true)) return;
     if (def.length < 8) return;
     entries.push({
       term_name: term,
@@ -254,6 +276,10 @@ function parseEntriesFromFlatText(fullText: string): ExtractedTermEntry[] {
 
     const m = raw.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,140}?)\s{2,}(.+)$/);
     if (m) {
+      if (!isLikelyTerm(m[1], true)) {
+        if (currentDef) currentDef += ` ${trimmed}`;
+        continue;
+      }
       pushCurrent();
       currentTerm = m[1].trim();
       currentDef = m[2].trim();
@@ -262,7 +288,7 @@ function parseEntriesFromFlatText(fullText: string): ExtractedTermEntry[] {
     }
 
     const singleGap = trimmed.match(/^([A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]{1,120})\s([A-Z].{8,})$/);
-    if (singleGap && !singleGap[1].includes('.') && singleGap[1].length <= 90) {
+    if (singleGap && !singleGap[1].includes('.') && singleGap[1].length <= 90 && isLikelyTerm(singleGap[1], true)) {
       pushCurrent();
       currentTerm = singleGap[1].trim();
       currentDef = singleGap[2].trim();
@@ -273,9 +299,8 @@ function parseEntriesFromFlatText(fullText: string): ExtractedTermEntry[] {
     const looksLikeTermOnly =
       !trimmed.includes('.') &&
       !trimmed.includes('?') &&
-      trimmed.length >= 2 &&
-      trimmed.length <= 90 &&
-      /^[A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]+$/.test(trimmed);
+      /^[A-Za-z0-9*][A-Za-z0-9\s\-\/(),.'":+]+$/.test(trimmed) &&
+      isLikelyTerm(trimmed, true);
 
     if (looksLikeTermOnly) {
       pendingStandaloneTerm = trimmed;
