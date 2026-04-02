@@ -244,6 +244,7 @@ export default function KnowledgeReviewPage() {
       const presignData = await presignRes.json().catch(() => ({}));
       if (!presignRes.ok) throw new Error(presignData.error || '获取上传凭证失败');
       const uploadInfo = presignData.upload;
+      const maxFileSize = Number(presignData.max_file_size || 0);
       if (!uploadInfo?.bucket || !uploadInfo?.storage_path || !uploadInfo?.token) {
         throw new Error('上传凭证无效');
       }
@@ -252,7 +253,18 @@ export default function KnowledgeReviewPage() {
       const { error: uploadError } = await supabase.storage
         .from(uploadInfo.bucket)
         .uploadToSignedUrl(uploadInfo.storage_path, uploadInfo.token, file);
-      if (uploadError) throw new Error(uploadError.message || '上传文件失败');
+      if (uploadError) {
+        const message = String(uploadError.message || '');
+        if (message.includes('maximum allowed size')) {
+          const maxMb = maxFileSize > 0 ? Math.floor(maxFileSize / (1024 * 1024)) : null;
+          throw new Error(
+            maxMb
+              ? `文件超出上传上限（当前最大 ${maxMb}MB），请压缩 PDF 后重试`
+              : '文件超出上传上限，请压缩 PDF 后重试'
+          );
+        }
+        throw new Error(uploadError.message || '上传文件失败');
+      }
 
       const completeRes = await fetch('/api/knowledge-review/pdf', {
         method: 'POST',
@@ -466,7 +478,7 @@ export default function KnowledgeReviewPage() {
         </div>
 
         {activeTab === 'document' ? (
-          <section className="p-3 sm:p-4 flex flex-col min-h-[78vh]">
+          <section className="p-3 sm:p-4 flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                 <FileText size={16} />
@@ -487,7 +499,7 @@ export default function KnowledgeReviewPage() {
                 </div>
               </div>
             ) : pdf ? (
-              <div className="flex-1 min-h-[72vh] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+              <div className="h-[calc(100vh-220px)] min-h-[640px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
                 <iframe
                   src={`${pdf.file_url}#toolbar=1&navpanes=0&scrollbar=1`}
                   className="w-full h-full"
@@ -495,7 +507,7 @@ export default function KnowledgeReviewPage() {
                 />
               </div>
             ) : (
-              <div className="flex-1 grid place-items-center text-center text-gray-500 px-4">
+              <div className="h-[calc(100vh-220px)] min-h-[640px] grid place-items-center text-center text-gray-500 px-4">
                 <p className="text-sm">
                   暂无复习 PDF。请先上传 `The_sunflower_CISSP_Summary_Version_2.0.pdf`（或其他复习文档）。
                 </p>
