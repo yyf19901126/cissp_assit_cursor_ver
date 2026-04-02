@@ -406,8 +406,15 @@ export default function KnowledgeReviewPage() {
       applySelectedTerm(exact);
       return;
     }
-    await runAiLookupWhenNoResult();
+    // 无精确命中时不自动替用户做选择，保留给用户主动触发 AI 查询
+    setShowDropdown(true);
   };
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const hasExactMatch = Boolean(
+    normalizedQuery &&
+      searchItems.some((item) => item.term_name.toLowerCase() === normalizedQuery)
+  );
 
   return (
     <div className="w-full min-w-0 max-w-[1600px] mx-auto space-y-4">
@@ -549,6 +556,17 @@ export default function KnowledgeReviewPage() {
                 >
                   查询
                 </button>
+                {!searching && query.trim() && !hasExactMatch && (
+                  <button
+                    type="button"
+                    onMouseDown={runAiLookupWhenNoResult}
+                    disabled={queryingAI}
+                    className="absolute right-[54px] top-1/2 -translate-y-1/2 text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-200 disabled:opacity-50"
+                  >
+                    {queryingAI ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    AI查询
+                  </button>
+                )}
                 {showDropdown && query.trim() && (
                   <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg max-h-64 overflow-y-auto">
                     {searching ? (
@@ -557,23 +575,41 @@ export default function KnowledgeReviewPage() {
                         查询中...
                       </p>
                     ) : searchItems.length > 0 ? (
-                      searchItems.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onMouseDown={() => {
-                            applySelectedTerm(item);
-                          }}
-                          className={clsx(
-                            'w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800',
-                            selectedTerm?.term_name === item.term_name &&
-                              'bg-indigo-50 dark:bg-indigo-900/20'
-                          )}
-                        >
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.term_name}</p>
-                          <p className="text-xs text-gray-500 truncate">{item.official_definition}</p>
-                        </button>
-                      ))
+                      <>
+                        {!hasExactMatch && (
+                          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-violet-50/70 dark:bg-violet-900/10">
+                            <p className="text-[11px] text-violet-700 dark:text-violet-300 mb-1">
+                              未精确命中，建议使用 AI 查询该术语
+                            </p>
+                            <button
+                              type="button"
+                              onMouseDown={runAiLookupWhenNoResult}
+                              disabled={queryingAI}
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-200 disabled:opacity-50"
+                            >
+                              {queryingAI ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                              主动 AI 查询“{query.trim()}”
+                            </button>
+                          </div>
+                        )}
+                        {searchItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onMouseDown={() => {
+                              applySelectedTerm(item);
+                            }}
+                            className={clsx(
+                              'w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800',
+                              selectedTerm?.term_name === item.term_name &&
+                                'bg-indigo-50 dark:bg-indigo-900/20'
+                            )}
+                          >
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.term_name}</p>
+                            <p className="text-xs text-gray-500 truncate">{item.official_definition}</p>
+                          </button>
+                        ))}
+                      </>
                     ) : (
                       <div className="px-3 py-2 space-y-2">
                         <p className="text-xs text-gray-500">术语库没有直接命中</p>
