@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NEXT_DEV_DIST_DIR=.next-dev next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "backfill:knowledge": "ts-node scripts/backfill-knowledge-terms.ts"
+    "backfill:knowledge": "ts-node scripts/backfill-knowledge-terms.ts",
+    "backfill:question-tags": "ts-node scripts/backfill-question-knowledge-tags.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
@@ -21,6 +22,7 @@
     "pdfjs-dist": "^4.0.379",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-pdf": "^9.1.1",
     "recharts": "^3.8.0"
   },
   "devDependencies": {

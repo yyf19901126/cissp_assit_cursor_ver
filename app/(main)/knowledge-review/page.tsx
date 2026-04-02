@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
 import { KnowledgeTerm } from '@/types/database';
 import { getSupabase } from '@/lib/supabase';
@@ -17,6 +18,15 @@ import {
   FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
+
+const PdfReviewReader = dynamic(() => import('@/components/PdfReviewReader'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[calc(100vh-220px)] min-h-[640px] grid place-items-center text-sm text-gray-500">
+      正在初始化 PDF 阅读器...
+    </div>
+  ),
+});
 
 type ReviewPdfFile = {
   id: string;
@@ -127,6 +137,7 @@ export default function KnowledgeReviewPage() {
   const [generating, setGenerating] = useState(false);
   const [mockQuestions, setMockQuestions] = useState<MockQuestion[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
+  const handledRouteTermRef = useRef('');
   const activeTab: 'document' | 'assistant' =
     pathname?.endsWith('/assistant') ? 'assistant' : 'document';
 
@@ -366,8 +377,8 @@ export default function KnowledgeReviewPage() {
     }
   };
 
-  const runAiLookupWhenNoResult = async () => {
-    const keyword = query.trim();
+  const runAiLookupWhenNoResult = async (forcedKeyword?: string) => {
+    const keyword = (forcedKeyword ?? query).trim();
     if (!keyword) return;
     setQueryingAI(true);
     try {
@@ -389,6 +400,7 @@ export default function KnowledgeReviewPage() {
       setRelatedQuestions([]);
       setMockQuestions([]);
       setSelectedAnswers({});
+      setQuery(keyword);
       setShowDropdown(false);
     } catch (e: any) {
       alert(e.message || 'AI 查询失败');
@@ -409,6 +421,74 @@ export default function KnowledgeReviewPage() {
     // 无精确命中时不自动替用户做选择，保留给用户主动触发 AI 查询
     setShowDropdown(true);
   };
+
+  const lookupTermByKeyword = useCallback(
+    async (rawKeyword: string) => {
+      const keyword = rawKeyword.trim();
+      if (!keyword) return;
+      setQuery(keyword);
+      const params = new URLSearchParams({
+        q: keyword,
+        page: '1',
+        page_size: '10',
+      });
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/knowledge/terms?${params.toString()}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || '术语查询失败');
+        const rawItems: KnowledgeTerm[] = data.items || [];
+        const normalized = keyword.toLowerCase();
+        const sorted = [...rawItems].sort((a, b) => {
+          const aName = a.term_name.toLowerCase();
+          const bName = b.term_name.toLowerCase();
+          const aExact = aName === normalized ? 1 : 0;
+          const bExact = bName === normalized ? 1 : 0;
+          if (aExact !== bExact) return bExact - aExact;
+          const aPrefix = aName.startsWith(normalized) ? 1 : 0;
+          const bPrefix = bName.startsWith(normalized) ? 1 : 0;
+          if (aPrefix !== bPrefix) return bPrefix - aPrefix;
+          return aName.localeCompare(bName);
+        });
+        setSearchItems(sorted);
+        setShowDropdown(true);
+        const exact = sorted.find((item) => item.term_name.toLowerCase() === normalized);
+        if (exact) {
+          applySelectedTerm(exact);
+          return;
+        }
+        await runAiLookupWhenNoResult(keyword);
+      } catch (e: any) {
+        alert(e.message || '术语查询失败');
+      } finally {
+        setSearching(false);
+      }
+    },
+    [applySelectedTerm]
+  );
+
+  const handlePdfSelectionLookup = useCallback(
+    (term: string) => {
+      const keyword = term.trim();
+      if (!keyword) return;
+      router.push(`/knowledge-review/assistant?term=${encodeURIComponent(keyword)}`);
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'assistant') return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const routeTerm = (params.get('term') || '').trim();
+    if (!routeTerm) return;
+    if (handledRouteTermRef.current === routeTerm) return;
+    handledRouteTermRef.current = routeTerm;
+    lookupTermByKeyword(routeTerm);
+  }, [activeTab, lookupTermByKeyword]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const hasExactMatch = Boolean(
@@ -506,13 +586,11 @@ export default function KnowledgeReviewPage() {
                 </div>
               </div>
             ) : pdf ? (
-              <div className="h-[calc(100vh-220px)] min-h-[640px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
-                <iframe
-                  src={`${pdf.file_url}#toolbar=1&navpanes=0&scrollbar=1`}
-                  className="w-full h-full"
-                  title="knowledge-review-pdf"
-                />
-              </div>
+              <PdfReviewReader
+                fileUrl={pdf.file_url}
+                fileName={pdf.file_name}
+                onLookupTerm={handlePdfSelectionLookup}
+              />
             ) : (
               <div className="h-[calc(100vh-220px)] min-h-[640px] grid place-items-center text-center text-gray-500 px-4">
                 <p className="text-sm">
@@ -559,7 +637,7 @@ export default function KnowledgeReviewPage() {
                 {!searching && query.trim() && !hasExactMatch && (
                   <button
                     type="button"
-                    onMouseDown={runAiLookupWhenNoResult}
+                    onMouseDown={() => runAiLookupWhenNoResult()}
                     disabled={queryingAI}
                     className="absolute right-[54px] top-1/2 -translate-y-1/2 text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-200 disabled:opacity-50"
                   >
@@ -583,7 +661,7 @@ export default function KnowledgeReviewPage() {
                             </p>
                             <button
                               type="button"
-                              onMouseDown={runAiLookupWhenNoResult}
+                              onMouseDown={() => runAiLookupWhenNoResult()}
                               disabled={queryingAI}
                               className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-200 disabled:opacity-50"
                             >
@@ -615,7 +693,7 @@ export default function KnowledgeReviewPage() {
                         <p className="text-xs text-gray-500">术语库没有直接命中</p>
                         <button
                           type="button"
-                          onMouseDown={runAiLookupWhenNoResult}
+                          onMouseDown={() => runAiLookupWhenNoResult()}
                           disabled={queryingAI}
                           className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-200"
                         >
