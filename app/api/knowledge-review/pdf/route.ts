@@ -18,11 +18,20 @@ async function ensureStorageBucket() {
   if (listError) throw listError;
 
   const exists = (buckets || []).some((b) => b.name === STORAGE_BUCKET);
-  if (exists) return;
+  if (exists) {
+    // 旧 bucket 可能沿用了过小的 fileSizeLimit，显式更新一次避免 4MB 也被拒绝
+    const { error: updateError } = await supabase.storage.updateBucket(STORAGE_BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_FILE_SIZE,
+      allowedMimeTypes: ['application/pdf'],
+    });
+    if (updateError) throw updateError;
+    return;
+  }
 
   const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
     public: true,
-    fileSizeLimit: `${MAX_FILE_SIZE}`,
+    fileSizeLimit: MAX_FILE_SIZE,
     allowedMimeTypes: ['application/pdf'],
   });
   if (createError && !String(createError.message || '').includes('already exists')) {
