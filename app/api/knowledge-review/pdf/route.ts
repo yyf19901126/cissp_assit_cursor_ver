@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { createServiceClient } from '@/lib/supabase';
 import { getUserFromRequest } from '@/lib/auth';
@@ -7,9 +6,28 @@ import { getUserFromRequest } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 
 const MAX_FILE_SIZE = 60 * 1024 * 1024; // 60MB
+const STORAGE_BUCKET = 'knowledge-review-pdfs';
 
 function sanitizeFileName(name: string) {
   return name.replace(/[^\w.\-()\u4e00-\u9fa5 ]/g, '_');
+}
+
+async function ensureStorageBucket() {
+  const supabase = createServiceClient();
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+  if (listError) throw listError;
+
+  const exists = (buckets || []).some((b) => b.name === STORAGE_BUCKET);
+  if (exists) return;
+
+  const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+    public: true,
+    fileSizeLimit: `${MAX_FILE_SIZE}`,
+    allowedMimeTypes: ['application/pdf'],
+  });
+  if (createError && !String(createError.message || '').includes('already exists')) {
+    throw createError;
+  }
 }
 
 // GET /api/knowledge-review/pdf
@@ -71,23 +89,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '文件过大，限制 60MB' }, { status: 400 });
     }
 
-    const dirFs = path.join(process.cwd(), 'public', 'knowledge-review');
-    await mkdir(dirFs, { recursive: true });
-
     const safeName = sanitizeFileName(path.basename(file.name, '.pdf'));
     const unique = `${Date.now()}-${safeName}-${crypto.randomUUID().slice(0, 8)}.pdf`;
-    const fileFsPath = path.join(dirFs, unique);
-    const fileWebPath = `/knowledge-review/${unique}`;
+    const storagePath = `uploads/${unique}`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(fileFsPath, buffer);
-
     const supabase = createServiceClient();
+
+    await ensureStorageBucket();
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: file.type || 'application/pdf',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      return NextResponse.json({ error: uploadError.message }, { status: 500 });
+    }
+
+    const { data: publicData } = supabase.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(storagePath);
+    const publicUrl = publicData.publicUrl;
+
     const { data, error } = await supabase
       .from('knowledge_review_pdfs')
       .insert({
         file_name: file.name,
-        file_path: fileWebPath,
+        file_path: publicUrl,
         file_size: file.size,
         mime_type: file.type || 'application/pdf',
         uploaded_by: authUser.sub,
