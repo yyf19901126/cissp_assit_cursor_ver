@@ -20,8 +20,37 @@ type Enriched = {
   is_new_topic: boolean;
 };
 
+const ENRICH_VERSION = 1;
+
 function toTermKey(term: string) {
   return term.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseJsonLenient(content: string) {
+  const raw = String(content || '').trim();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced?.[1]) {
+      try {
+        return JSON.parse(fenced[1]);
+      } catch {
+        // noop
+      }
+    }
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(raw.slice(start, end + 1));
+      } catch {
+        // noop
+      }
+    }
+    return {};
+  }
 }
 
 async function enrichWithAI(
@@ -41,14 +70,17 @@ async function enrichWithAI(
     domain_number: e.domain_number || 1,
   }));
 
-  const systemPrompt = `你是 CISSP 术语学习库增强助手。根据给定的术语与官方定义，生成精简学习字段。
+  const systemPrompt = `你是 ISC² CISSP 管理思维教练。根据给定术语与官方定义，生成学习字段。
 要求：
 1) 输出 JSON：{"items":[...]}
 2) 每个 item 必须包含：term_key, concept_logic, aka_synonyms, process_step, confusion_points, is_new_topic
-3) concept_logic 1-2 句，强调管理优先级/阶段/管理vs技术视角
-4) aka_synonyms 最多 5 个；没有就返回 []
-5) process_step 若无流程语义返回空字符串
-6) is_new_topic 仅当你有合理把握时设为 true，否则 false`;
+3) concept_logic 必须是“管理者决策逻辑”，不要复述定义；用中文，建议 2-3 句，优先采用“优先级：... 逻辑：...”结构
+4) concept_logic 要体现 ISC² 视角：先治理/风险/职责，再技术实现；将 Doer 思维拉向 Advisor/Manager 思维
+5) aka_synonyms 最多 5 个；没有就返回 []
+6) process_step 若无流程语义返回空字符串
+7) confusion_points 要指出易混概念与考试误选点
+8) is_new_topic 仅当你有合理把握时设为 true，否则 false
+9) 只输出 JSON，不要任何额外文字`;
 
   const response = await openai.chat.completions.create({
     model,
@@ -62,26 +94,31 @@ async function enrichWithAI(
   });
 
   const content = response.choices[0]?.message?.content || '{}';
-  let parsed: any = {};
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    return result;
-  }
-
-  const items = Array.isArray(parsed.items) ? parsed.items : [];
+  const parsed: any = parseJsonLenient(content);
+  const items = Array.isArray(parsed.items)
+    ? parsed.items
+    : Array.isArray(parsed.data)
+      ? parsed.data
+      : Array.isArray(parsed.terms)
+        ? parsed.terms
+        : [];
   for (const it of items) {
-    const key = String(it.term_key || '').trim();
+    const key = String(
+      it.term_key || it.termKey || it.key || (it.term_name ? it.term_name : '')
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
     if (!key) continue;
     result.set(key, {
       term_key: key,
-      concept_logic: String(it.concept_logic || ''),
-      aka_synonyms: Array.isArray(it.aka_synonyms)
-        ? it.aka_synonyms.map((x: any) => String(x)).slice(0, 8)
+      concept_logic: String(it.concept_logic || it.conceptLogic || ''),
+      aka_synonyms: Array.isArray(it.aka_synonyms || it.akaSynonyms)
+        ? (it.aka_synonyms || it.akaSynonyms).map((x: any) => String(x)).slice(0, 8)
         : [],
-      process_step: String(it.process_step || ''),
-      confusion_points: String(it.confusion_points || ''),
-      is_new_topic: Boolean(it.is_new_topic),
+      process_step: String(it.process_step || it.processStep || ''),
+      confusion_points: String(it.confusion_points || it.confusionPoints || ''),
+      is_new_topic: Boolean(it.is_new_topic ?? it.isNewTopic),
     });
   }
   return result;
@@ -125,6 +162,8 @@ export async function POST(request: NextRequest) {
     }
 
     const enriched = await enrichWithAI(normalized, ai_config);
+    const enrichModel =
+      ai_config?.model?.trim() || process.env.OPENAI_MODEL || 'gpt-4o';
 
     const rows = normalized.map((e) => {
       const term_key = toTermKey(e.term_name);
@@ -139,6 +178,9 @@ export async function POST(request: NextRequest) {
         process_step: ai?.process_step || '',
         confusion_points: ai?.confusion_points || '',
         is_new_topic: ai?.is_new_topic || false,
+        enriched_at: ai ? new Date().toISOString() : null,
+        enriched_model: ai ? enrichModel : null,
+        enriched_version: ai ? ENRICH_VERSION : null,
         source_id,
         updated_by: authUser.sub,
       };

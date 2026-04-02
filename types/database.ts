@@ -150,6 +150,9 @@ export interface KnowledgeTerm {
   confusion_points: string;
   is_new_topic: boolean;
   mastery_level: 0 | 1 | 2 | 3 | 4 | 5;
+  enriched_at?: string | null;
+  enriched_model?: string | null;
+  enriched_version?: number | null;
   source_id?: string | null;
   created_at: string;
   updated_at: string;

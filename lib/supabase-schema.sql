@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS knowledge_terms (
   confusion_points TEXT DEFAULT '',
   is_new_topic BOOLEAN DEFAULT FALSE,
   mastery_level SMALLINT DEFAULT 0 CHECK (mastery_level BETWEEN 0 AND 5),
+  enriched_at TIMESTAMPTZ,
+  enriched_model TEXT,
+  enriched_version INTEGER,
   source_id UUID REFERENCES knowledge_sources(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -111,6 +114,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_terms_domain ON knowledge_terms(domain_
 CREATE INDEX IF NOT EXISTS idx_knowledge_terms_mastery ON knowledge_terms(mastery_level);
 CREATE INDEX IF NOT EXISTS idx_knowledge_terms_new_topic ON knowledge_terms(is_new_topic);
 CREATE INDEX IF NOT EXISTS idx_knowledge_terms_source ON knowledge_terms(source_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_enriched_at ON knowledge_terms(enriched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_terms_enriched_version ON knowledge_terms(enriched_version);
 
 -- RLS (行级安全) — 所有操作通过 service_role API 路由完成
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;

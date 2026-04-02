@@ -9,23 +9,27 @@ import {
   AlertTriangle,
   Settings,
   LibraryBig,
+  FileText,
+  Layers,
+  CircleDashed,
   Shield,
   LogOut,
   Crown,
   User,
   Menu,
   X,
-  Ban,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 
-const navItems = [
-  { href: '/dashboard', label: '学习总览', icon: LayoutDashboard },
+const quizItems = [
   { href: '/quiz', label: '开始答题', icon: BookOpen },
-  { href: '/knowledge-base', label: '复习知识库', icon: LibraryBig },
   { href: '/wrong-questions', label: '错题本', icon: AlertTriangle },
-  { href: '/settings', label: '设置', icon: Settings },
+];
+
+const knowledgeItems = [
+  { href: '/knowledge-review', label: '知识点复习', icon: CircleDashed },
+  { href: '/knowledge-base', label: '复习知识库', icon: LibraryBig },
 ];
 
 export default function Sidebar() {
@@ -92,38 +96,117 @@ export default function Sidebar() {
       </div>
 
       {/* 导航 */}
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
-          const isActive =
-            pathname === item.href || pathname?.startsWith(item.href + '/');
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={clsx(
-                'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
-                isActive
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
-              )}
-            >
-              <Icon size={20} />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 p-4 space-y-4 overflow-y-auto">
+        <Link
+          href="/dashboard"
+          className={clsx(
+            'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+            pathname === '/dashboard'
+              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+          )}
+        >
+          <LayoutDashboard size={20} />
+          学习总览
+        </Link>
+
+        <div>
+          <div className="px-3 mb-1 flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <FileText size={14} />
+            刷题
+          </div>
+          <div className="space-y-1">
+            {quizItems.map((item) => {
+              const isActive =
+                pathname === item.href || pathname?.startsWith(item.href + '/');
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={clsx(
+                    'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+                    isActive
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                  )}
+                >
+                  <Icon size={18} />
+                  {item.label}
+                </Link>
+              );
+            })}
+            {isAdmin && (
+              <Link
+                href="/question-bank"
+                className={clsx(
+                  'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+                  pathname === '/question-bank'
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                )}
+              >
+                <Layers size={18} />
+                题库管理
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="px-3 mb-1 flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <LibraryBig size={14} />
+            刷知识点
+          </div>
+          <div className="space-y-1">
+            {knowledgeItems.map((item) => {
+              const isActive =
+                pathname === item.href || pathname?.startsWith(item.href + '/');
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={clsx(
+                    'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+                    isActive
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                  )}
+                >
+                  <Icon size={18} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        <Link
+          href="/settings"
+          className={clsx(
+            'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+            pathname === '/settings'
+              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+          )}
+        >
+          <Settings size={20} />
+          设置
+        </Link>
+
+        {/* 仍保留停用题目快捷入口，避免管理员找不到 */}
         {isAdmin && (
           <Link
             href="/unavailable-questions"
             className={clsx(
-              'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+              'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
               pathname === '/unavailable-questions'
                 ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200'
                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
             )}
           >
-            <Ban size={20} />
+            <CircleDashed size={18} />
             已停用题目
           </Link>
         )}

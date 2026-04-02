@@ -13,6 +13,7 @@ import {
   Save,
   Trash2,
   Plus,
+  ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -53,6 +54,7 @@ export default function KnowledgeBasePage() {
 
   const [editing, setEditing] = useState<Record<string, Partial<KnowledgeTerm>>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
   const [createData, setCreateData] = useState(emptyCreate);
@@ -455,47 +457,152 @@ export default function KnowledgeBasePage() {
             {items.map((item) => {
               const patch = editing[item.id] || {};
               const merged = { ...item, ...patch } as KnowledgeTerm;
+              const isExpanded = expandedId === item.id;
               return (
-                <div key={item.id} className="p-3 rounded-xl border border-gray-200 dark:border-gray-800">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      value={merged.term_name}
-                      onChange={(e) => updateEditing(item.id, { term_name: e.target.value })}
-                      disabled={!isAdmin}
-                      className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-semibold"
+                <div key={item.id} className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                    className="w-full px-3 py-3 text-left flex items-center gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
+                          D{merged.domain_number}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                          掌握 {merged.mastery_level}
+                        </span>
+                        {merged.is_new_topic && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-200">
+                            新考点
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">
+                        {merged.term_name}
+                      </p>
+                    </div>
+                    <ChevronDown
+                      size={18}
+                      className={clsx(
+                        'text-gray-400 transition-transform',
+                        isExpanded && 'rotate-180'
+                      )}
                     />
-                    <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
-                      D{merged.domain_number}
-                    </span>
-                    <select
-                      value={merged.mastery_level}
-                      onChange={(e) =>
-                        updateEditing(item.id, { mastery_level: Number(e.target.value) as any })
-                      }
-                      className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
-                    >
-                      {[0, 1, 2, 3, 4, 5].map((m) => (
-                        <option key={m} value={m}>
-                          掌握 {m}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="text-xs flex items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(merged.is_new_topic)}
-                        onChange={(e) => updateEditing(item.id, { is_new_topic: e.target.checked })}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input
+                          value={merged.term_name}
+                          onChange={(e) => updateEditing(item.id, { term_name: e.target.value })}
+                          disabled={!isAdmin}
+                          className="px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-semibold"
+                        />
+                        <select
+                          value={merged.domain_number}
+                          onChange={(e) =>
+                            updateEditing(item.id, { domain_number: Number(e.target.value) as any })
+                          }
+                          disabled={!isAdmin}
+                          className="px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm"
+                        >
+                          {CISSP_DOMAINS.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              D{d.id} {d.nameZh}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <textarea
+                        value={merged.official_definition}
+                        onChange={(e) =>
+                          updateEditing(item.id, { official_definition: e.target.value })
+                        }
                         disabled={!isAdmin}
+                        rows={3}
+                        placeholder="官方定义"
+                        className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
                       />
-                      新考点
-                    </label>
-                    <div className="ml-auto flex items-center gap-2">
+
+                      <textarea
+                        value={merged.concept_logic || ''}
+                        onChange={(e) => updateEditing(item.id, { concept_logic: e.target.value })}
+                        disabled={!isAdmin}
+                        rows={2}
+                        placeholder="管理核心点"
+                        className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
+                      />
+
+                      <input
+                        value={Array.isArray(merged.aka_synonyms) ? merged.aka_synonyms.join(', ') : ''}
+                        onChange={(e) =>
+                          updateEditing(item.id, {
+                            aka_synonyms: e.target.value
+                              .split(',')
+                              .map((x) => x.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        disabled={!isAdmin}
+                        placeholder="别名/同义词（英文逗号分隔）"
+                        className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
+                      />
+
+                      <input
+                        value={merged.process_step || ''}
+                        onChange={(e) => updateEditing(item.id, { process_step: e.target.value })}
+                        disabled={!isAdmin}
+                        placeholder="流程步骤（可选）"
+                        className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
+                      />
+
+                      <textarea
+                        value={merged.confusion_points || ''}
+                        onChange={(e) => updateEditing(item.id, { confusion_points: e.target.value })}
+                        disabled={!isAdmin}
+                        rows={2}
+                        placeholder="易混淆点"
+                        className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
+                      />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={merged.mastery_level}
+                          onChange={(e) =>
+                            updateEditing(item.id, { mastery_level: Number(e.target.value) as any })
+                          }
+                          disabled={!isAdmin}
+                          className="text-xs px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+                        >
+                          {[0, 1, 2, 3, 4, 5].map((m) => (
+                            <option key={m} value={m}>
+                              掌握 {m}
+                            </option>
+                          ))}
+                        </select>
+                        <label className="text-xs flex items-center gap-2 px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(merged.is_new_topic)}
+                            onChange={(e) =>
+                              updateEditing(item.id, { is_new_topic: e.target.checked })
+                            }
+                            disabled={!isAdmin}
+                          />
+                          新考点
+                        </label>
+                      </div>
+
                       {isAdmin && (
-                        <>
+                        <div className="flex items-center gap-2 pt-1">
                           <button
                             onClick={() => saveItem(item)}
                             disabled={savingId === item.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs"
                           >
                             {savingId === item.id ? (
                               <Loader2 size={12} className="animate-spin" />
@@ -506,34 +613,15 @@ export default function KnowledgeBasePage() {
                           </button>
                           <button
                             onClick={() => deleteItem(item.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs"
                           >
                             <Trash2 size={12} />
                             删除
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
-                  </div>
-
-                  <textarea
-                    value={merged.official_definition}
-                    onChange={(e) =>
-                      updateEditing(item.id, { official_definition: e.target.value })
-                    }
-                    disabled={!isAdmin}
-                    rows={3}
-                    className="mt-2 w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
-                  />
-
-                  <textarea
-                    value={merged.concept_logic || ''}
-                    onChange={(e) => updateEditing(item.id, { concept_logic: e.target.value })}
-                    disabled={!isAdmin}
-                    rows={2}
-                    placeholder="管理核心点"
-                    className="mt-2 w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
-                  />
+                  )}
                 </div>
               );
             })}
