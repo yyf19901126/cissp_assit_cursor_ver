@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
       correct_answer: (q.correct_answer || 'A').toUpperCase(),
       base_explanation: q.base_explanation || '',
       keywords: q.keywords || [],
+      knowledge_tags: q.knowledge_tags || [],
       is_available: true,
     }));
 

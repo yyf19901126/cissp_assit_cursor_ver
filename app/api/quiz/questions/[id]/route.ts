@@ -44,11 +44,13 @@ export async function PATCH(
       options,
       correct_answer,
       is_available,
+      knowledge_tags,
     } = body as {
       question_text?: string;
       options?: QuestionOption[];
       correct_answer?: string;
       is_available?: boolean;
+      knowledge_tags?: string[];
     };
 
     const supabase = createServiceClient();
@@ -97,6 +99,16 @@ export async function PATCH(
         return NextResponse.json({ error: 'is_available 必须为布尔值' }, { status: 400 });
       }
       patch.is_available = is_available;
+    }
+
+    if (knowledge_tags !== undefined) {
+      if (!Array.isArray(knowledge_tags)) {
+        return NextResponse.json({ error: 'knowledge_tags 必须为数组' }, { status: 400 });
+      }
+      patch.knowledge_tags = knowledge_tags
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+        .slice(0, 20);
     }
 
     if (Object.keys(patch).length === 0) {

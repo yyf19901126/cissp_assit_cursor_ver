@@ -28,6 +28,7 @@ export interface Question {
   correct_answer: string; // A, B, C, D
   base_explanation: string;
   keywords: string[]; // 题眼高亮词
+  knowledge_tags?: string[]; // 知识点标签（用于术语检索关联题目）
   /** false 时不出现在任何练习模式，仍保留在库中 */
   is_available?: boolean;
   created_at: string;
@@ -133,6 +134,17 @@ export interface KnowledgeSource {
   file_name: string;
   file_sha256: string;
   page_count: number;
+  uploaded_by?: string | null;
+  uploaded_at: string;
+}
+
+// 知识点复习 PDF（仅存文件元数据，不解析）
+export interface KnowledgeReviewPdf {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
   uploaded_by?: string | null;
   uploaded_at: string;
 }

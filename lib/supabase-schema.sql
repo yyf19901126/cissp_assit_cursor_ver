@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS questions (
   correct_answer VARCHAR(1) NOT NULL CHECK (correct_answer IN ('A','B','C','D')),
   base_explanation TEXT DEFAULT '',
   keywords TEXT[] DEFAULT '{}',
+  knowledge_tags TEXT[] DEFAULT '{}',
   is_available BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS sequential_progress (
 
 -- 索引优化
 CREATE INDEX IF NOT EXISTS idx_questions_domain ON questions(domain);
+CREATE INDEX IF NOT EXISTS idx_questions_knowledge_tags ON questions USING GIN (knowledge_tags);
 CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_progress_question ON user_progress(question_id);
 CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id);
@@ -87,6 +89,20 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
   uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
   uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 5.1 知识点复习 PDF 元数据（仅保存文件，不做解析）
+CREATE TABLE IF NOT EXISTS knowledge_review_pdfs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  file_name TEXT NOT NULL,
+  file_path TEXT NOT NULL UNIQUE,
+  file_size BIGINT NOT NULL DEFAULT 0,
+  mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_review_pdfs_uploaded_at
+  ON knowledge_review_pdfs(uploaded_at DESC);
 
 -- 6. CISSP 知识库术语表
 CREATE TABLE IF NOT EXISTS knowledge_terms (
@@ -124,6 +140,7 @@ ALTER TABLE exam_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequential_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_review_pdfs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_terms ENABLE ROW LEVEL SECURITY;
 
 -- questions 表对所有人可读（包括 anon）
@@ -131,6 +148,9 @@ CREATE POLICY "Questions are viewable by everyone" ON questions
   FOR SELECT USING (true);
 
 CREATE POLICY "Knowledge sources are viewable by everyone" ON knowledge_sources
+  FOR SELECT USING (true);
+
+CREATE POLICY "Knowledge review pdfs are viewable by everyone" ON knowledge_review_pdfs
   FOR SELECT USING (true);
 
 CREATE POLICY "Knowledge terms are viewable by everyone" ON knowledge_terms
