@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { KnowledgeTerm } from '@/types/database';
+import { getSupabase } from '@/lib/supabase';
 import {
   BookOpen,
   Upload,
@@ -56,6 +57,7 @@ export default function KnowledgeReviewPage() {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchItems, setSearchItems] = useState<KnowledgeTerm[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [selectedTerm, setSelectedTerm] = useState<KnowledgeTerm | null>(null);
 
   const [explaining, setExplaining] = useState(false);
@@ -116,7 +118,20 @@ export default function KnowledgeReviewPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || '术语查询失败');
-      setSearchItems(data.items || []);
+      const rawItems: KnowledgeTerm[] = data.items || [];
+      const normalized = keyword.toLowerCase();
+      const sorted = [...rawItems].sort((a, b) => {
+        const aName = a.term_name.toLowerCase();
+        const bName = b.term_name.toLowerCase();
+        const aExact = aName === normalized ? 1 : 0;
+        const bExact = bName === normalized ? 1 : 0;
+        if (aExact !== bExact) return bExact - aExact;
+        const aPrefix = aName.startsWith(normalized) ? 1 : 0;
+        const bPrefix = bName.startsWith(normalized) ? 1 : 0;
+        if (aPrefix !== bPrefix) return bPrefix - aPrefix;
+        return aName.localeCompare(bName);
+      });
+      setSearchItems(sorted);
     } catch (e: any) {
       console.error(e.message || e);
     } finally {
@@ -144,16 +159,48 @@ export default function KnowledgeReviewPage() {
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch('/api/knowledge-review/pdf', {
+      // 1) 向后端申请一次性签名上传凭证（不经应用服务器传文件，避免大小限制）
+      const presignRes = await fetch('/api/knowledge-review/pdf', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: form,
+        body: JSON.stringify({
+          action: 'presign',
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type || 'application/pdf',
+        }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '上传失败');
-      setPdf(data.file || null);
+      const presignData = await presignRes.json().catch(() => ({}));
+      if (!presignRes.ok) throw new Error(presignData.error || '获取上传凭证失败');
+      const uploadInfo = presignData.upload;
+      if (!uploadInfo?.bucket || !uploadInfo?.storage_path || !uploadInfo?.token) {
+        throw new Error('上传凭证无效');
+      }
+
+      // 2) 浏览器直传 Supabase Storage
+      const supabase = getSupabase();
+      const { error: uploadError } = await supabase.storage
+        .from(uploadInfo.bucket)
+        .uploadToSignedUrl(uploadInfo.storage_path, uploadInfo.token, file);
+      if (uploadError) throw new Error(uploadError.message || '上传文件失败');
+
+      // 3) 回写数据库元数据
+      const completeRes = await fetch('/api/knowledge-review/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'complete',
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type || 'application/pdf',
+          storage_path: uploadInfo.storage_path,
+        }),
+      });
+      const completeData = await completeRes.json().catch(() => ({}));
+      if (!completeRes.ok) throw new Error(completeData.error || '保存文件信息失败');
+      setPdf(completeData.file || null);
     } catch (e: any) {
       alert(e.message || '上传失败');
     } finally {
@@ -327,58 +374,76 @@ export default function KnowledgeReviewPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                onBlur={() => {
+                  setTimeout(() => setShowDropdown(false), 120);
+                }}
                 placeholder="粘贴左侧术语进行查询（如 BCP / ALE / BIA）"
                 className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm"
               />
-            </div>
-            {searching && (
-              <p className="text-xs text-gray-500 mt-1">
-                <Loader2 size={12} className="inline animate-spin mr-1" />
-                查询中...
-              </p>
-            )}
-          </div>
-
-          {query.trim() && searchItems.length > 0 && (
-            <div className="space-y-2">
-              {searchItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedTerm(item);
-                    setDeepExplain(null);
-                    setRelatedQuestions([]);
-                    setMockQuestions([]);
-                  }}
-                  className={clsx(
-                    'w-full text-left px-3 py-2 rounded-xl border text-sm',
-                    selectedTerm?.id === item.id
-                      ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
-                      : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800'
+              {showDropdown && query.trim() && (
+                <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg max-h-64 overflow-y-auto">
+                  {searching ? (
+                    <p className="px-3 py-2 text-xs text-gray-500">
+                      <Loader2 size={12} className="inline animate-spin mr-1" />
+                      查询中...
+                    </p>
+                  ) : searchItems.length > 0 ? (
+                    searchItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onMouseDown={() => {
+                          setSelectedTerm(item);
+                          setDeepExplain(null);
+                          setRelatedQuestions([]);
+                          setMockQuestions([]);
+                          setShowDropdown(false);
+                          setQuery(item.term_name);
+                        }}
+                        className={clsx(
+                          'w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800',
+                          selectedTerm?.id === item.id && 'bg-indigo-50 dark:bg-indigo-900/20'
+                        )}
+                      >
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.term_name}</p>
+                        <p className="text-xs text-gray-500 truncate">{item.official_definition}</p>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-xs text-gray-500">没有命中术语</p>
                   )}
-                >
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{item.term_name}</p>
-                  <p className="text-xs text-gray-500 truncate">{item.official_definition}</p>
-                </button>
-              ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           {selectedTerm && (
             <div className="space-y-3 pt-1">
               <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-                <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{selectedTerm.term_name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Domain {selectedTerm.domain_number}</p>
-                <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">
-                  {selectedTerm.official_definition}
-                </p>
-                {selectedTerm.concept_logic && (
-                  <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-2">
-                    {selectedTerm.concept_logic}
-                  </p>
-                )}
+                <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">术语详情</p>
+                <div className="space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+                  <p><span className="font-semibold">term_name：</span>{selectedTerm.term_name}</p>
+                  <p><span className="font-semibold">term_key：</span>{selectedTerm.term_key}</p>
+                  <p><span className="font-semibold">domain_number：</span>{selectedTerm.domain_number}</p>
+                  <p><span className="font-semibold">official_definition：</span>{selectedTerm.official_definition}</p>
+                  <p><span className="font-semibold">concept_logic：</span>{selectedTerm.concept_logic || '-'}</p>
+                  <p><span className="font-semibold">aka_synonyms：</span>{selectedTerm.aka_synonyms?.join(', ') || '-'}</p>
+                  <p><span className="font-semibold">process_step：</span>{selectedTerm.process_step || '-'}</p>
+                  <p><span className="font-semibold">confusion_points：</span>{selectedTerm.confusion_points || '-'}</p>
+                  <p><span className="font-semibold">is_new_topic：</span>{String(Boolean(selectedTerm.is_new_topic))}</p>
+                  <p><span className="font-semibold">mastery_level：</span>{selectedTerm.mastery_level}</p>
+                  <p><span className="font-semibold">source_id：</span>{selectedTerm.source_id || '-'}</p>
+                  <p><span className="font-semibold">enriched_model：</span>{selectedTerm.enriched_model || '-'}</p>
+                  <p><span className="font-semibold">enriched_version：</span>{selectedTerm.enriched_version ?? '-'}</p>
+                  <p><span className="font-semibold">enriched_at：</span>{selectedTerm.enriched_at || '-'}</p>
+                  <p><span className="font-semibold">created_at：</span>{selectedTerm.created_at}</p>
+                  <p><span className="font-semibold">updated_at：</span>{selectedTerm.updated_at}</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
