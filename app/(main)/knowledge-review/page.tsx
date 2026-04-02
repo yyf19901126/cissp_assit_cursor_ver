@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { KnowledgeTerm } from '@/types/database';
@@ -103,7 +103,6 @@ function toTermViewFromAI(result: any, query: string): TermDetailView {
 export default function KnowledgeReviewPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
   const { user, loading: authLoading, isAdmin, aiSettings } = useAuth();
 
@@ -129,9 +128,7 @@ export default function KnowledgeReviewPage() {
   const [mockQuestions, setMockQuestions] = useState<MockQuestion[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
   const activeTab: 'document' | 'assistant' =
-    pathname?.endsWith('/assistant') || searchParams.get('tab') === 'assistant'
-      ? 'assistant'
-      : 'document';
+    pathname?.endsWith('/assistant') ? 'assistant' : 'document';
 
   const applySelectedTerm = useCallback((item: KnowledgeTerm) => {
     setSelectedTerm(toTermViewFromDb(item));
