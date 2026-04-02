@@ -257,7 +257,7 @@ export default function KnowledgeBasePage() {
 
   const createItem = async () => {
     if (!createData.term_name.trim() || !createData.official_definition.trim()) {
-      return alert('term_name 与 official_definition 必填');
+      return alert('术语名称与官方定义为必填项');
     }
     setCreating(true);
     try {
@@ -404,13 +404,13 @@ export default function KnowledgeBasePage() {
         {showCreate && isAdmin && (
           <div className="p-3 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 space-y-2">
             <input
-              placeholder="term_name"
+              placeholder="术语名称（如 BCP）"
               value={createData.term_name}
               onChange={(e) => setCreateData((p) => ({ ...p, term_name: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-sm bg-gray-50 dark:bg-gray-800"
             />
             <textarea
-              placeholder="official_definition"
+              placeholder="官方定义"
               rows={3}
               value={createData.official_definition}
               onChange={(e) =>
@@ -428,7 +428,7 @@ export default function KnowledgeBasePage() {
               >
                 {CISSP_DOMAINS.map((d) => (
                   <option key={d.id} value={d.id}>
-                    Domain {d.id}
+                    D{d.id} {d.nameZh}
                   </option>
                 ))}
               </select>
@@ -469,9 +469,6 @@ export default function KnowledgeBasePage() {
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
                           D{merged.domain_number}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                          掌握 {merged.mastery_level}
                         </span>
                         {merged.is_new_topic && (
                           <span className="text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-200">
@@ -569,21 +566,7 @@ export default function KnowledgeBasePage() {
                         className="w-full px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs"
                       />
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          value={merged.mastery_level}
-                          onChange={(e) =>
-                            updateEditing(item.id, { mastery_level: Number(e.target.value) as any })
-                          }
-                          disabled={!isAdmin}
-                          className="text-xs px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
-                        >
-                          {[0, 1, 2, 3, 4, 5].map((m) => (
-                            <option key={m} value={m}>
-                              掌握 {m}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="grid grid-cols-1 gap-2">
                         <label className="text-xs flex items-center gap-2 px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                           <input
                             type="checkbox"

@@ -28,7 +28,8 @@ const quizItems = [
 ];
 
 const knowledgeItems = [
-  { href: '/knowledge-review', label: '知识点复习', icon: CircleDashed },
+  { href: '/knowledge-review', label: '复习文档', icon: CircleDashed },
+  { href: '/knowledge-review/assistant', label: '知识点复习助手', icon: CircleDashed },
   { href: '/knowledge-base', label: '复习知识库', icon: LibraryBig },
 ];
 
@@ -161,7 +162,9 @@ export default function Sidebar() {
           <div className="space-y-1">
             {knowledgeItems.map((item) => {
               const isActive =
-                pathname === item.href || pathname?.startsWith(item.href + '/');
+                item.href === '/knowledge-review'
+                  ? pathname === item.href
+                  : pathname === item.href || pathname?.startsWith(item.href + '/');
               const Icon = item.icon;
               return (
                 <Link
